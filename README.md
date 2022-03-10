@@ -19,12 +19,6 @@ Install the requirements
 pip install -r requirements.txt
 ```
 
-Play the animation
-
-```bash
-python animation.py
-```
-
 ## Folder structure
 
 ## Concepts
