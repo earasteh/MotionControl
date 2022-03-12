@@ -10,8 +10,7 @@ from libs.utils.env import world
 # Frame rate = 0.1
 # Vehicle simulation time = 1e-4
 # Controller time = 1e-2 - 1e-3
-# Motion planner  = 3e-2 - 3e-3
-###
+# ###
 
 Veh_SIM_NUM = 100  # Number of times vehicle simulation (Simulation_resolution  = sim.dt/Veh_SIM_NUM)
 Control_SIM_NUM = Veh_SIM_NUM / 10
@@ -25,7 +24,7 @@ class Car:
         # Variable to log all the data
         self.DataLog = np.zeros((Veh_SIM_NUM * 4000, 45))
         # Model parameters
-        init_vel = 25.0
+        init_vel = 15.0
         self.x = init_x
         self.y = init_y
         self.yaw = init_yaw
@@ -94,8 +93,8 @@ class Car:
                 self.lateral_tracker.update_waypoints()
 
                 # Filter the delta output
-                self.x_del.append((1 - 1e-5 / (2*0.001)) * self.x_del[-1] + 1e-5 / (2*0.001) * self.delta)
-                self.delta = self.x_del[-1]
+                # self.x_del.append((1 - 1e-5 / (2*0.001)) * self.x_del[-1] + 1e-5 / (2*0.001) * self.delta)
+                # self.delta = self.x_del[-1]
 
             ## Vehicle model
             self.state, self.x, self.y, self.yaw, self.v, state_dot, outputs, self.ax_prev, self.ay_prev = \

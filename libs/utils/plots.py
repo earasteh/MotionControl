@@ -25,6 +25,8 @@ def data_cleaning(DataLog):
                                                    'Fy_FL', 'Fy_FR', 'Fy_RL', 'Fy_RR',
                                                    'Fz_FL', 'Fz_FR', 'Fz_RL', 'Fz_RR',
                                                    'sFL', 'sFR', 'sRL', 'sRR', 'Fxt_FL', 'Fyt_FL', 'crosstrack'])
+    if not os.path.exists('results'):
+        os.makedirs('results')
     try:
         DataLog_pd.to_csv('results/Results.csv')
     except FileNotFoundError:

@@ -50,34 +50,48 @@ class StanleyController:
         self._lookahead_distance = 5.0
         self.cross_track_deadband = 0.01
 
-        # self.px = path_x
-        # self.py = path_y
-        # self.pyaw = path_yaw
+        self.px = waypoints[0][:]
+        self.py = waypoints[1][:]
+        self.pyaw = waypoints[2][:]
 
     def update_waypoints(self):
         local_waypoints = self._waypoints
 
-    def get_lookahead_index(self, x, y, lookahead_distance):
-        min_idx = 0
-        min_dist = float("inf")
-        for i in range(len(self._waypoints)):
-            dist = np.linalg.norm(np.array([
-                self._waypoints[i][0] - x,
-                self._waypoints[i][1] - y]))
-            if dist < min_dist:
-                min_dist = dist
-                min_idx = i
+    def find_target_path_id(self, x, y, yaw):
 
-        total_dist = min_dist
-        lookahead_idx = min_idx
-        for i in range(min_idx + 1, len(self._waypoints)):
-            if total_dist >= lookahead_distance:
-                break
-            total_dist += np.linalg.norm(np.array([
-                self._waypoints[i][0] - self._waypoints[i - 1][0],
-                self._waypoints[i][1] - self._waypoints[i - 1][1]]))
-            lookahead_idx = i
-        return lookahead_idx
+        # Calculate position of the front axle
+        fx = x + self.L * np.cos(yaw)
+        fy = y + self.L * np.sin(yaw)
+
+        dx = fx - self.px    # Find the x-axis of the front axle relative to the path
+        dy = fy - self.py    # Find the y-axis of the front axle relative to the path
+
+        d = np.hypot(dx, dy) # Find the distance from the front axle to the path
+        target_index = np.argmin(d) # Find the shortest distance in the array
+
+        return target_index, dx[target_index], dy[target_index], d[target_index]
+
+    # def get_lookahead_index(self, x, y, lookahead_distance):
+    #     min_idx = 0
+    #     min_dist = float("inf")
+    #     for i in range(len(self._waypoints)):
+    #         dist = np.linalg.norm(np.array([
+    #             self._waypoints[0][i] - x,
+    #             self._waypoints[1][i] - y]))
+    #         if dist < min_dist:
+    #             min_dist = dist
+    #             min_idx = i
+    #
+    #     total_dist = min_dist
+    #     lookahead_idx = min_idx
+    #     for i in range(min_idx + 1, len(self._waypoints)):
+    #         if total_dist >= lookahead_distance:
+    #             break
+    #         total_dist += np.linalg.norm(np.array([
+    #             self._waypoints[i][0] - self._waypoints[i - 1][0],
+    #             self._waypoints[i][1] - self._waypoints[i - 1][1]]))
+    #         lookahead_idx = i
+    #     return lookahead_idx
 
     def stanley_control(self, x, y, yaw, current_velocity):
         """
@@ -87,50 +101,67 @@ class StanleyController:
         :param current_velocity:
         :return: steering output, target index, crosstrack error
         """
-        crosstrack_error = float("inf")
-        crosstrack_vector = np.array([float("inf"), float("inf")])
+        target_index, dx, dy, absolute_error = self.find_target_path_id(x, y, yaw)
+        yaw_error = normalise_angle(self.pyaw[target_index] - yaw)
+        # calculate cross-track error
+        front_axle_vector = [np.sin(yaw), -np.cos(yaw)]
+        nearest_path_vector = [dx, dy]
+        crosstrack_error = np.sign(np.dot(nearest_path_vector, front_axle_vector)) * absolute_error
+        crosstrack_steering_error = np.arctan2((self.k * crosstrack_error), (self.k_soft + current_velocity))
 
-        ce_idx = self.get_lookahead_index(x, y, self._lookahead_distance)
-        crosstrack_vector = np.array([self._waypoints[ce_idx][0] - \
-                                      x - self._lookahead_distance * np.cos(yaw),
-                                      self._waypoints[ce_idx][1] - \
-                                      y - self._lookahead_distance * np.sin(yaw)])
-        crosstrack_error = np.linalg.norm(crosstrack_vector)
+        desired_steering_angle = yaw_error + crosstrack_steering_error
+        # Constrains steering angle to the vehicle limits
+        limited_steering_angle = np.clip(desired_steering_angle, -self.max_steer, self.max_steer)
 
-        if crosstrack_error < self.cross_track_deadband:
-            crosstrack_error = 0
 
-        # Compute the sign of the crosstrack error
-        crosstrack_heading = np.arctan2(crosstrack_vector[1], crosstrack_vector[0])
-        crosstrack_heading_error = crosstrack_heading - yaw
-        crosstrack_heading_error = (crosstrack_heading_error + np.pi) % (2 * np.pi) - np.pi
-        crosstrack_sign = np.sign(crosstrack_heading_error)
 
-        # Compute heading relative to trajectory (heading error)
-        # First ensure that we are not at the last index. If we are,
-        # flip back to the first index (loop the waypoints)
-        if ce_idx < len(self._waypoints) - 1:
-            vect_wp0_to_wp1 = np.array(
-                [self._waypoints[ce_idx + 1][0] - self._waypoints[ce_idx][0],
-                 self._waypoints[ce_idx + 1][1] - self._waypoints[ce_idx][1]])
-            trajectory_heading = np.arctan2(vect_wp0_to_wp1[1],
-                                            vect_wp0_to_wp1[0])
-        else:
-            vect_wp0_to_wp1 = np.array(
-                [self._waypoints[0][0] - self._waypoints[-1][0],
-                 self._waypoints[0][1] - self._waypoints[-1][1]])
-            trajectory_heading = np.arctan2(vect_wp0_to_wp1[1],
-                                            vect_wp0_to_wp1[0])
 
-        heading_error = trajectory_heading - yaw
-        heading_error = (heading_error + np.pi) % (2 * np.pi) - np.pi
-        steering_output = heading_error + \
-                          np.arctan(self.k * crosstrack_sign * crosstrack_error / \
-                                    (current_velocity + self.k_soft))
 
-        limited_steering_angle = np.clip(steering_output, -self.max_steer, self.max_steer)
 
-        return limited_steering_angle, ce_idx, crosstrack_error
+        # crosstrack_error = float("inf")
+        # crosstrack_vector = np.array([float("inf"), float("inf")])
+        #
+        # ce_idx = self.get_lookahead_index(x, y, self._lookahead_distance)
+        # crosstrack_vector = np.array([self._waypoints[ce_idx][0] - \
+        #                               x - self._lookahead_distance * np.cos(yaw),
+        #                               self._waypoints[ce_idx][1] - \
+        #                               y - self._lookahead_distance * np.sin(yaw)])
+        # crosstrack_error = np.linalg.norm(crosstrack_vector)
+        #
+        # if crosstrack_error < self.cross_track_deadband:
+        #     crosstrack_error = 0
+        #
+        # # Compute the sign of the crosstrack error
+        # crosstrack_heading = np.arctan2(crosstrack_vector[1], crosstrack_vector[0])
+        # crosstrack_heading_error = crosstrack_heading - yaw
+        # crosstrack_heading_error = (crosstrack_heading_error + np.pi) % (2 * np.pi) - np.pi
+        # crosstrack_sign = np.sign(crosstrack_heading_error)
+        #
+        # # Compute heading relative to trajectory (heading error)
+        # # First ensure that we are not at the last index. If we are,
+        # # flip back to the first index (loop the waypoints)
+        # if ce_idx < len(self._waypoints) - 1:
+        #     vect_wp0_to_wp1 = np.array(
+        #         [self._waypoints[0][ce_idx + 1] - self._waypoints[0][ce_idx],
+        #          self._waypoints[1][ce_idx + 1] - self._waypoints[1][ce_idx]])
+        #     trajectory_heading = np.arctan2(vect_wp0_to_wp1[1],
+        #                                     vect_wp0_to_wp1[0])
+        # else:
+        #     vect_wp0_to_wp1 = np.array(
+        #         [self._waypoints[0][0] - self._waypoints[0][-1],
+        #          self._waypoints[1][0] - self._waypoints[1][-1]])
+        #     trajectory_heading = np.arctan2(vect_wp0_to_wp1[1],
+        #                                     vect_wp0_to_wp1[0])
+        #
+        # heading_error = trajectory_heading - yaw
+        # heading_error = (heading_error + np.pi) % (2 * np.pi) - np.pi
+        # steering_output = heading_error + \
+        #                   np.arctan(self.k * crosstrack_sign * crosstrack_error / \
+        #                             (current_velocity + self.k_soft))
+        #
+        # limited_steering_angle = np.clip(steering_output, -self.max_steer, self.max_steer)
+
+        return limited_steering_angle, target_index, crosstrack_error
 
     @property
     def waypoints(self):
