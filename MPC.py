@@ -100,24 +100,24 @@ veh = VehicleModel()
 system = veh.planar_model(state0, tire_torque0, mu_max, delta0, param, ax_prev0, ay_prev0)
 
 # # Define the decision variable and constraints
-# q = vertcat(*[MX.sym(f'u{i}', 2, 1) for i in range(N)])
-# s = vertcat(*[MX.sym(f'x{i}', 4, 1) for i in range(N + 1)])
-# # decision variable
-# z = []
-# # decision variable, lower and upper bounds
-# zlb = []
-# zub = []
-# constraints = []
-#
-# # Create a function
-# cost = 0.
-# Q = np.eye(4) * 3.6
-# R = np.eye(2) * 0.02
-#
-# # Lower bound and upper bound on input
-# ulb = list(-us)
-# uub = list(np.array([10., 15.]) - us)
-#
+q = vertcat(*[MX.sym(f'u{i}', 3, 1) for i in range(N)])
+s = vertcat(*[MX.sym(f'x{i}', 6, 1) for i in range(N + 1)])
+# decision variable
+z = []
+# decision variable, lower and upper bounds
+zlb = []
+zub = []
+constraints = []
+
+# Create a function
+cost = 0.
+Q = np.eye(6) * 3.6
+R = np.eye(2) * 0.02
+
+# Lower bound and upper bound on input
+ulb = np.array([0, 0])
+uub = np.array([10., 15.])
+
 # for i in range(N):
 #     # states
 #     s_i = s[4 * i:4 * (i + 1)]
