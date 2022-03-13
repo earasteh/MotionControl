@@ -1,11 +1,13 @@
 import numpy as np
-
+import casadi as ca
 from libs.utils.normalise_angle import normalise_angle
+import matplotlib.pyplot as plt
 
 # Path interpolation parameters
 INTERP_MAX_POINTS_PLOT = 2  # number of points used for displaying
 # selected path
 INTERP_DISTANCE_RES = 0.1  # distance between interpolated points
+
 
 class StanleyController:
 
@@ -58,40 +60,17 @@ class StanleyController:
         local_waypoints = self._waypoints
 
     def find_target_path_id(self, x, y, yaw):
-
         # Calculate position of the front axle
         fx = x + self.L * np.cos(yaw)
         fy = y + self.L * np.sin(yaw)
 
-        dx = fx - self.px    # Find the x-axis of the front axle relative to the path
-        dy = fy - self.py    # Find the y-axis of the front axle relative to the path
+        dx = fx - self.px  # Find the x-axis of the front axle relative to the path
+        dy = fy - self.py  # Find the y-axis of the front axle relative to the path
 
-        d = np.hypot(dx, dy) # Find the distance from the front axle to the path
-        target_index = np.argmin(d) # Find the shortest distance in the array
+        d = np.hypot(dx, dy)  # Find the distance from the front axle to the path
+        target_index = np.argmin(d)  # Find the shortest distance in the array
 
         return target_index, dx[target_index], dy[target_index], d[target_index]
-
-    # def get_lookahead_index(self, x, y, lookahead_distance):
-    #     min_idx = 0
-    #     min_dist = float("inf")
-    #     for i in range(len(self._waypoints)):
-    #         dist = np.linalg.norm(np.array([
-    #             self._waypoints[0][i] - x,
-    #             self._waypoints[1][i] - y]))
-    #         if dist < min_dist:
-    #             min_dist = dist
-    #             min_idx = i
-    #
-    #     total_dist = min_dist
-    #     lookahead_idx = min_idx
-    #     for i in range(min_idx + 1, len(self._waypoints)):
-    #         if total_dist >= lookahead_distance:
-    #             break
-    #         total_dist += np.linalg.norm(np.array([
-    #             self._waypoints[i][0] - self._waypoints[i - 1][0],
-    #             self._waypoints[i][1] - self._waypoints[i - 1][1]]))
-    #         lookahead_idx = i
-    #     return lookahead_idx
 
     def stanley_control(self, x, y, yaw, current_velocity):
         """
@@ -113,59 +92,85 @@ class StanleyController:
         # Constrains steering angle to the vehicle limits
         limited_steering_angle = np.clip(desired_steering_angle, -self.max_steer, self.max_steer)
 
-
-
-
-
-
-        # crosstrack_error = float("inf")
-        # crosstrack_vector = np.array([float("inf"), float("inf")])
-        #
-        # ce_idx = self.get_lookahead_index(x, y, self._lookahead_distance)
-        # crosstrack_vector = np.array([self._waypoints[ce_idx][0] - \
-        #                               x - self._lookahead_distance * np.cos(yaw),
-        #                               self._waypoints[ce_idx][1] - \
-        #                               y - self._lookahead_distance * np.sin(yaw)])
-        # crosstrack_error = np.linalg.norm(crosstrack_vector)
-        #
-        # if crosstrack_error < self.cross_track_deadband:
-        #     crosstrack_error = 0
-        #
-        # # Compute the sign of the crosstrack error
-        # crosstrack_heading = np.arctan2(crosstrack_vector[1], crosstrack_vector[0])
-        # crosstrack_heading_error = crosstrack_heading - yaw
-        # crosstrack_heading_error = (crosstrack_heading_error + np.pi) % (2 * np.pi) - np.pi
-        # crosstrack_sign = np.sign(crosstrack_heading_error)
-        #
-        # # Compute heading relative to trajectory (heading error)
-        # # First ensure that we are not at the last index. If we are,
-        # # flip back to the first index (loop the waypoints)
-        # if ce_idx < len(self._waypoints) - 1:
-        #     vect_wp0_to_wp1 = np.array(
-        #         [self._waypoints[0][ce_idx + 1] - self._waypoints[0][ce_idx],
-        #          self._waypoints[1][ce_idx + 1] - self._waypoints[1][ce_idx]])
-        #     trajectory_heading = np.arctan2(vect_wp0_to_wp1[1],
-        #                                     vect_wp0_to_wp1[0])
-        # else:
-        #     vect_wp0_to_wp1 = np.array(
-        #         [self._waypoints[0][0] - self._waypoints[0][-1],
-        #          self._waypoints[1][0] - self._waypoints[1][-1]])
-        #     trajectory_heading = np.arctan2(vect_wp0_to_wp1[1],
-        #                                     vect_wp0_to_wp1[0])
-        #
-        # heading_error = trajectory_heading - yaw
-        # heading_error = (heading_error + np.pi) % (2 * np.pi) - np.pi
-        # steering_output = heading_error + \
-        #                   np.arctan(self.k * crosstrack_sign * crosstrack_error / \
-        #                             (current_velocity + self.k_soft))
-        #
-        # limited_steering_angle = np.clip(steering_output, -self.max_steer, self.max_steer)
-
         return limited_steering_angle, target_index, crosstrack_error
 
     @property
     def waypoints(self):
         return self._waypoints
+
+
+class MPCC(StanleyController):
+    def __init__(self, N, T, p):
+        self.N = N # dt = T/N
+        self.T = T # Total time
+        self.p = p # system parameters
+        self.controller_prep()
+
+    def SystemModel(self, states, u, p, xs=None, us=None):
+        """Compute the right-hand side of the ODEs
+
+        Args:
+            states (array-like): State vector
+            u (array-like): Input vector
+            p (object of class parameter): Parameters
+            xs (array-like, optional): steady-state
+            us (array-like, optional): steady-state input
+
+        Returns:
+            array-like: dx/dt
+        """
+        if xs is not None:
+            # Assume x is in deviation variable form
+            states = [states[i] + xs[i] for i in range(6)]
+        if us is not None:
+            # Assume u is in deviation variable form
+            u = [u[i] + us[i] for i in range(2)]
+
+        # parameters:
+        m = p.m
+        lf = p.a
+        lr = p.b
+
+        # x, y, yaw, vx, vy, yaw_dot = states
+        # tau, ddelta, delta = u
+        x = states[0]
+        y = states[1]
+        yaw = states[2]
+        vx = states[3]
+        vy = states[4]
+        yaw_dot = states[5]
+
+        tau = u[0]
+        ddelta = u[1]
+        delta = u[2]
+
+        # TODO: Fix this
+        Fx = 10 * tau
+
+        dx = vx * np.cos(yaw) - vy * np.sin(yaw)
+        dy = vx * np.sin(yaw) + vy * np.cos(yaw)
+        dyaw = yaw_dot
+        dvx = Fx / m
+        dvy = (ddelta * vx + delta * dvx) * lr / (lf + lr)
+        dyaw_dot = (ddelta * vx + delta * dvx) * 1 / (lf + lr)
+
+        state_dot = [dx, dy, dyaw, dvx, dvy, dyaw_dot]
+
+        return state_dot
+
+    def controller_prep(self):
+    #     # unpacking the real signals that come from the system
+    #     x_r, y_r, yaw_r, vx_r, vy_r, yaw_dot_r = x_real
+
+        dt = self.T / self.N
+        # CasADi works with symbolics
+        t = ca.SX.sym("t", 1, 1)
+        x = ca.SX.sym("x", 6, 1)
+        u = ca.SX.sym("u", 3, 1)
+        ode = ca.vertcat(*self.SystemModel(x, u, self.p))
+        f = {'x': x, 't': t, 'p': u, 'ode': ode}
+        Phi = ca.integrator("Phi", "cvodes", f, {'tf': dt})
+
 
 
 class LongitudinalController:

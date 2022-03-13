@@ -2,7 +2,7 @@ import os
 import numpy as np
 from libs.vehicle_model.vehicle_model import VehicleModel
 from libs.vehicle_model.vehicle_model import VehicleParameters
-from libs.controllers.stanley_controller import StanleyController
+from libs.controllers.stanley_controller import StanleyController, MPCC
 from libs.controllers.stanley_controller import LongitudinalController
 from libs.utils.env import world
 
@@ -78,6 +78,7 @@ class Car:
                                                  self.wheelbase, waypoints=[px, py, pyaw])
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
         self.long_tracker = LongitudinalController(self.k_v, self.k_i, self.k_d)
+        self.MPC = MPCC(10, 0.1, p)
 
     def drive(self, frame):
         # Motion Planner:
@@ -90,11 +91,12 @@ class Car:
                     self.long_tracker.long_control(self.target_vel, self.v, self.prev_vel,
                                                    self.total_vel_error, self.dt)
                 self.prev_vel = self.v
+                # self.MPC.controller()
                 self.lateral_tracker.update_waypoints()
 
                 # Filter the delta output
-                # self.x_del.append((1 - 1e-5 / (2*0.001)) * self.x_del[-1] + 1e-5 / (2*0.001) * self.delta)
-                # self.delta = self.x_del[-1]
+                self.x_del.append((1 - 1e-5 / (2*0.001)) * self.x_del[-1] + 1e-5 / (2*0.001) * self.delta)
+                self.delta = self.x_del[-1]
 
             ## Vehicle model
             self.state, self.x, self.y, self.yaw, self.v, state_dot, outputs, self.ax_prev, self.ay_prev = \
