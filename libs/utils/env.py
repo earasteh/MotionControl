@@ -11,13 +11,13 @@ import matplotlib.pyplot as plt
 class Path:
     def __init__(self, x, y, ds=0.05):
         self.ds = ds
-        self.px, self.py, self.pyaw, _ = generate_cubic_spline(x, y, self.ds)
+        self.px, self.py, self.pyaw, _, self.s = generate_cubic_spline(x, y, self.ds)
 
     def create_fromcsv(self, dir):
         df = pd.read_csv(dir)
         x = df['X-axis'].values
         y = df['Y-axis'].values
-        self.px, self.py, self.pyaw, _ = generate_cubic_spline(x, y, self.ds)
+        self.px, self.py, self.pyaw, _, self.s = generate_cubic_spline(x, y, self.ds)
 
 
 class Env:

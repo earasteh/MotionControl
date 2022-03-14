@@ -2,12 +2,9 @@ import numpy as np
 import casadi as ca
 from libs.utils.normalise_angle import normalise_angle
 import matplotlib.pyplot as plt
+from libs.vehicle_model.vehicle_model import VehicleParameters
 
-# Path interpolation parameters
-INTERP_MAX_POINTS_PLOT = 2  # number of points used for displaying
-# selected path
-INTERP_DISTANCE_RES = 0.1  # distance between interpolated points
-
+params = VehicleParameters()
 
 class StanleyController:
 
@@ -59,13 +56,16 @@ class StanleyController:
     def update_waypoints(self):
         local_waypoints = self._waypoints
 
-    def find_target_path_id(self, x, y, yaw):
-        # Calculate position of the front axle
-        fx = x + self.L * np.cos(yaw)
-        fy = y + self.L * np.sin(yaw)
+    @staticmethod
+    def find_target_path_id(px, py, x, y, yaw, param):
+        L = param.L
 
-        dx = fx - self.px  # Find the x-axis of the front axle relative to the path
-        dy = fy - self.py  # Find the y-axis of the front axle relative to the path
+        # Calculate position of the front axle
+        fx = x + L * np.cos(yaw)
+        fy = y + L * np.sin(yaw)
+
+        dx = fx - px  # Find the x-axis of the front axle relative to the path
+        dy = fy - py  # Find the y-axis of the front axle relative to the path
 
         d = np.hypot(dx, dy)  # Find the distance from the front axle to the path
         target_index = np.argmin(d)  # Find the shortest distance in the array
@@ -80,7 +80,7 @@ class StanleyController:
         :param current_velocity:
         :return: steering output, target index, crosstrack error
         """
-        target_index, dx, dy, absolute_error = self.find_target_path_id(x, y, yaw)
+        target_index, dx, dy, absolute_error = self.find_target_path_id(self.px, self.py, x, y, yaw, params)
         yaw_error = normalise_angle(self.pyaw[target_index] - yaw)
         # calculate cross-track error
         front_axle_vector = [np.sin(yaw), -np.cos(yaw)]
@@ -99,12 +99,18 @@ class StanleyController:
         return self._waypoints
 
 
-class MPCC(StanleyController):
-    def __init__(self, N, T, p):
-        self.N = N # dt = T/N
-        self.T = T # Total time
-        self.p = p # system parameters
-        self.controller_prep()
+class MPCC:
+    def __init__(self, N, T, param, px, py, pyaw):
+        self.N = N  # dt = T/N
+        self.T = T  # Total time
+        self.params = param  # system parameters
+        self.px = px
+        self.py = py
+        self.pyaw = pyaw
+        # casadi setup
+        self.nx = 6
+        self.nu = 3
+        self.controller_cost(0, 0, 0)
 
     def SystemModel(self, states, u, p, xs=None, us=None):
         """Compute the right-hand side of the ODEs
@@ -158,19 +164,114 @@ class MPCC(StanleyController):
 
         return state_dot
 
-    def controller_prep(self):
-    #     # unpacking the real signals that come from the system
-    #     x_r, y_r, yaw_r, vx_r, vy_r, yaw_dot_r = x_real
+    def controller_cost(self, x, y, yaw):
+        """prepares the MPC variables and calculates the cost"""
 
+        # Calculating the contouring cost
+        target_index, dx, dy, absolute_error = StanleyController.find_target_path_id(self.px, self.py, x, y, yaw,
+                                                                                     self.params)
+        selected_px = self.px[target_index:target_index+200]
+        selected_py = self.py[target_index:target_index+200]
+        selected_pyaw = self.pyaw[target_index:target_index+200]
+
+        e_c = np.sin(selected_pyaw) * (x-selected_px) - np.cos(selected_pyaw) * (y-selected_py)
+        e_l = -np.cos(selected_pyaw) * (x - selected_px) - np.sin(selected_pyaw) * (y - selected_py)
+
+        qc = 0.01 # lateral error cost
+        ql = 0.005  # longitudinal error cost
+        Q_path = np.array([[qc, 0], [0, ql]])
+
+        # Contouring cost
+        Jc = 0.
+        for k in range(len(e_c)):
+            Jc += np.array([e_c[k], e_l[k]]).T @ Q_path @ np.array([e_c[k], e_l[k]])
+
+        #     # unpacking the real signals that come from the system
+        #     x_r, y_r, yaw_r, vx_r, vy_r, yaw_dot_r = x_real
         dt = self.T / self.N
         # CasADi works with symbolics
+        nx = self.nx
+        nu = self.nu
+
         t = ca.SX.sym("t", 1, 1)
-        x = ca.SX.sym("x", 6, 1)
-        u = ca.SX.sym("u", 3, 1)
-        ode = ca.vertcat(*self.SystemModel(x, u, self.p))
+        x = ca.SX.sym("x", nx, 1)
+        u = ca.SX.sym("u", nu, 1)
+        ode = ca.vertcat(*self.SystemModel(x, u, self.params))
         f = {'x': x, 't': t, 'p': u, 'ode': ode}
         Phi = ca.integrator("Phi", "cvodes", f, {'tf': dt})
+        # # Define the decision variable and constraints
+        q = ca.vertcat(*[ca.MX.sym(f'u{i}', nu, 1) for i in range(self.N)])
+        s = ca.vertcat(*[ca.MX.sym(f'x{i}', nx, 1) for i in range(self.N + 1)])
+        # decision variable
+        z = []
+        # decision variable, lower and upper bounds
+        zlb = []
+        zub = []
+        constraints = []
+        # Create a function
+        cost = 0.
+        Q = np.eye(nx) * 3.6
+        R = np.eye(nu) * 0.02
 
+        # Lower bound and upper bound on input
+        ulb = [0, 0, 0]
+        uub = [10., 10., 10.]
+
+        for i in range(self.N):
+            # states
+            s_i = s[nx * i:nx * (i + 1)]
+            s_ip1 = s[nx * (i + 1):nx * (i + 2)]
+            # inputs
+            q_i = q[nu * i:nu * (i + 1)]
+
+            # Decision variable
+            zlb += [-np.inf] * nx
+            zub += [np.inf] * nx
+            zlb += ulb
+            zub += uub
+
+            z.append(s_i)
+            z.append(q_i)
+
+            xt_ip1 = Phi(x0=s_i, p=q_i)['xf']
+            cost += s_i.T @ Q @ s_i + q_i.T @ R @ q_i
+            constraints.append(xt_ip1 - s_ip1)
+
+        # s_N
+        z.append(s_ip1)
+        zlb += [-np.inf] * nx
+        zub += [np.inf] * nx
+
+        constraints = ca.vertcat(*constraints)
+        variables = ca.vertcat(*z)
+
+        # Create the optimization problem
+        g_bnd = np.zeros(self.N * nx)
+        nlp = {'f': cost, 'g': constraints, 'x': variables}
+        opt = {'print_time': 0, 'ipopt.print_level': 0}
+        solver = ca.nlpsol('solver', 'ipopt', nlp, opt)
+        return solver, zlb, zub
+
+    def solve_mpc(self, current_state):
+        """Solve MPC provided the current state, i.e., this
+        function is u = h(x), which is the implicit control law of MPC.
+
+        Args:
+            current_state (array-like): current state
+
+        Returns:
+            tuple: current input and return status pair
+        """
+        solver, zlb, zub = self.controller_prep()
+        g_bnd = np.zeros(self.N * self.nx)
+
+        # Set the lower and upper bound of the decision variable
+        # such that s0 = current_state
+        for i in range(4):
+            zlb[i] = current_state[i]
+            zub[i] = current_state[i]
+        sol_out = solver(lbx=zlb, ubx=zub, lbg=g_bnd, ubg=g_bnd)
+        return np.array(sol_out['x'][self.nx:self.nx + self.nu]), solver.stats()['return_status']
 
 
 class LongitudinalController:

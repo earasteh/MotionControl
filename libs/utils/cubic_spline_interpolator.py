@@ -24,7 +24,7 @@ def generate_cubic_spline(x, y, ds=0.05, bc_type='natural'):
 
     cs_points = cs(s).T
 
-    return cs_points[0], cs_points[1], yaw, curvature
+    return cs_points[0], cs_points[1], yaw, curvature, s
 
 
 def generate_cubic_path(x, y, ds=0.05, bc_type='natural'):

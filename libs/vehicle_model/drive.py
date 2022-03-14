@@ -2,8 +2,8 @@ import os
 import numpy as np
 from libs.vehicle_model.vehicle_model import VehicleModel
 from libs.vehicle_model.vehicle_model import VehicleParameters
-from libs.controllers.stanley_controller import StanleyController, MPCC
-from libs.controllers.stanley_controller import LongitudinalController
+from libs.controllers.controller import StanleyController, MPCC
+from libs.controllers.controller import LongitudinalController
 from libs.utils.env import world
 
 ###
@@ -20,7 +20,7 @@ p = VehicleParameters()
 
 class Car:
 
-    def __init__(self, init_x, init_y, init_yaw, px, py, pyaw, dt):
+    def __init__(self, init_x, init_y, init_yaw, px, py, pyaw, ps, dt):
         # Variable to log all the data
         self.DataLog = np.zeros((Veh_SIM_NUM * 4000, 45))
         # Model parameters
@@ -45,12 +45,14 @@ class Car:
         self.state = [init_vel, 0, 0, init_vel / p.rw, init_vel / p.rw, init_vel / p.rw, init_vel / p.rw, init_yaw,
                       init_x, init_y]
 
-        # Lateral Tracker parameters
+        # path data
         self.px = px
         self.py = py
         self.pyaw = pyaw
-        self.k = 100
-        self.ksoft = 1.0
+        self.ps = ps  # path parameter (x(s), y(s), yaw(s))
+        # Lateral Tracker parameters
+        self.k = 1
+        self.ksoft = 0.01
         self.kyaw = 0
         self.ksteer = 0
         self.crosstrack_error = None
@@ -78,13 +80,14 @@ class Car:
                                                  self.wheelbase, waypoints=[px, py, pyaw])
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
         self.long_tracker = LongitudinalController(self.k_v, self.k_i, self.k_d)
-        self.MPC = MPCC(10, 0.1, p)
+        self.MPC = MPCC(10, 0.1, p, self.px, self.py, self.pyaw)
 
     def drive(self, frame):
         # Motion Planner:
         for i in range(Veh_SIM_NUM):
             ## Motion Controllers:
             if i % 10 == 0:
+                self.MPC.controller_cost(self.x, self.y, self.yaw)
                 self.delta, self.target_id, self.crosstrack_error = \
                     self.lateral_tracker.stanley_control(self.x, self.y, self.yaw, self.v)
                 self.total_vel_error, self.torque_vec = \
@@ -95,7 +98,7 @@ class Car:
                 self.lateral_tracker.update_waypoints()
 
                 # Filter the delta output
-                self.x_del.append((1 - 1e-5 / (2*0.001)) * self.x_del[-1] + 1e-5 / (2*0.001) * self.delta)
+                self.x_del.append((1 - 1e-5 / (2 * 0.001)) * self.x_del[-1] + 1e-5 / (2 * 0.001) * self.delta)
                 self.delta = self.x_del[-1]
 
             ## Vehicle model

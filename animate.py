@@ -24,7 +24,7 @@ def main():
     sim = Simulation()
     path = world.path
 
-    car = Car(path.px[10], path.py[10], path.pyaw[10], path.px, path.py, path.pyaw, sim.veh_dt)
+    car = Car(path.px[10], path.py[10]+2, path.pyaw[10], path.px, path.py, path.pyaw, path.s, sim.veh_dt)
     desc = Description(car.overall_length, car.overall_width, car.rear_overhang, car.tyre_diameter, car.tyre_width,
                        car.axle_track, car.wheelbase)
 
