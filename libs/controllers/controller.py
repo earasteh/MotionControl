@@ -4,12 +4,14 @@ from libs.utils.normalise_angle import normalise_angle
 import matplotlib.pyplot as plt
 from libs.vehicle_model.vehicle_model import VehicleParameters
 
-params = VehicleParameters()
+
+# params = VehicleParameters()
+
 
 class StanleyController:
 
     def __init__(self, control_gain=2.5, softening_gain=1.0, yaw_rate_gain=0.0, steering_damp_gain=0.0,
-                 max_steer=np.deg2rad(24), wheelbase=0.0,
+                 max_steer=np.deg2rad(24), wheelbase=0.0, param=None,
                  waypoints=None):
         """
         Stanley Controller
@@ -52,6 +54,7 @@ class StanleyController:
         self.px = waypoints[0][:]
         self.py = waypoints[1][:]
         self.pyaw = waypoints[2][:]
+        self.params = param  # system parameters
 
     def update_waypoints(self):
         local_waypoints = self._waypoints
@@ -80,7 +83,7 @@ class StanleyController:
         :param current_velocity:
         :return: steering output, target index, crosstrack error
         """
-        target_index, dx, dy, absolute_error = self.find_target_path_id(self.px, self.py, x, y, yaw, params)
+        target_index, dx, dy, absolute_error = self.find_target_path_id(self.px, self.py, x, y, yaw, self.params)
         yaw_error = normalise_angle(self.pyaw[target_index] - yaw)
         # calculate cross-track error
         front_axle_vector = [np.sin(yaw), -np.cos(yaw)]
@@ -109,10 +112,10 @@ class MPCC:
         self.pyaw = pyaw
         # casadi setup
         self.nx = 6
-        self.nu = 3
+        self.nu = 2
         self.controller_cost(0, 0, 0)
 
-    def SystemModel(self, states, u, p, xs=None, us=None):
+    def SystemModel(self, states, u, param, xs=None, us=None):
         """Compute the right-hand side of the ODEs
 
         Args:
@@ -124,6 +127,10 @@ class MPCC:
 
         Returns:
             array-like: dx/dt
+            :param us:
+            :param xs:
+            :param states:
+            :param param:
         """
         if xs is not None:
             # Assume x is in deviation variable form
@@ -132,35 +139,58 @@ class MPCC:
             # Assume u is in deviation variable form
             u = [u[i] + us[i] for i in range(2)]
 
-        # parameters:
-        m = p.m
-        lf = p.a
-        lr = p.b
+        # parameters of the vehicle:
+        m = param.m
+        lf = param.a
+        lr = param.b
+        Izz = param.Izz
+        rw = param.rw
+        # tire parameters for the pajecka model - front
+        Bf = param.BFL
+        Cf = param.CFL
+        Df = param.DFL
+        # tire parameters for the pajecka model - rear
+        Br = param.BRL
+        Cr = param.CRL
+        Dr = param.DRL
+        # Longitudinal parameters
+        Cm1 = 0.287
+        Cm2 = 0.0545
+        Cr0 = 0.0518
+        Cr2 = 0.00035
 
-        # x, y, yaw, vx, vy, yaw_dot = states
-        # tau, ddelta, delta = u
+        # states
         x = states[0]
         y = states[1]
         yaw = states[2]
         vx = states[3]
         vy = states[4]
-        yaw_dot = states[5]
-
+        omega = states[5]
+        # system inputs
         tau = u[0]
-        ddelta = u[1]
-        delta = u[2]
+        delta = u[1]
+        # v_theta = u[2]
 
-        # TODO: Fix this
-        Fx = 10 * tau
+        # Slip angles for the front and rear
+        alpha_f = delta - (vy + lf * omega) / (vx + 0.00001)
+        alpha_r = (-vy + lr * omega) / (vx + 0.00001)
+        # alpha_f = - np.arctan((omega * lf + vy) / (vx + 0.0001)) + delta
+        # alpha_r = np.arctan((omega * lr - vy) / (vx + 0.0001))
+        # Lateral Forces
+        Ffy = Df * np.sin(Cf * np.arctan(Bf * alpha_f))
+        Fry = Dr * np.sin(Cr * np.arctan(Br * alpha_r))
+        # Frx = (Cm1 - Cm2 * vx) * tau - Cr0 - Cr2 * vx**2
+        Frx = tau * rw / m
 
         dx = vx * np.cos(yaw) - vy * np.sin(yaw)
         dy = vx * np.sin(yaw) + vy * np.cos(yaw)
-        dyaw = yaw_dot
-        dvx = Fx / m
-        dvy = (ddelta * vx + delta * dvx) * lr / (lf + lr)
-        dyaw_dot = (ddelta * vx + delta * dvx) * 1 / (lf + lr)
+        dyaw = omega
+        dvx = 1 / m * (Frx - Ffy * np.sin(delta) + m * vy * omega)
+        dvy = 1 / m * (Fry - Ffy * np.cos(delta) - m * vx * omega)
+        domega = 1 / Izz * (Ffy * lf * np.cos(delta) - Fry * lr)
+        # dtheta = v_theta
 
-        state_dot = [dx, dy, dyaw, dvx, dvy, dyaw_dot]
+        state_dot = [dx, dy, dyaw, dvx, dvy, domega]
 
         return state_dot
 
@@ -170,24 +200,31 @@ class MPCC:
         # Calculating the contouring cost
         target_index, dx, dy, absolute_error = StanleyController.find_target_path_id(self.px, self.py, x, y, yaw,
                                                                                      self.params)
-        selected_px = self.px[target_index:target_index+200]
-        selected_py = self.py[target_index:target_index+200]
-        selected_pyaw = self.pyaw[target_index:target_index+200]
+        selected_px = self.px[target_index:target_index + 200]
+        selected_py = self.py[target_index:target_index + 200]
+        selected_pyaw = self.pyaw[target_index:target_index + 200]
 
-        e_c = np.sin(selected_pyaw) * (x-selected_px) - np.cos(selected_pyaw) * (y-selected_py)
-        e_l = -np.cos(selected_pyaw) * (x - selected_px) - np.sin(selected_pyaw) * (y - selected_py)
+        # e_c = np.sin(selected_pyaw) * (x - selected_px) - np.cos(selected_pyaw) * (y - selected_py)
+        # e_l = -np.cos(selected_pyaw) * (x - selected_px) - np.sin(selected_pyaw) * (y - selected_py)
+        e_y = y - selected_py
+        e_yaw = yaw - selected_pyaw
 
-        qc = 0.01 # lateral error cost
-        ql = 0.005  # longitudinal error cost
-        Q_path = np.array([[qc, 0], [0, ql]])
+        qc = 5e5 * 1 / 0.5 ** 2  # lateral error cost
+        qyaw = 1e3 * 1 / (20 * np.pi / 180) ** 2  # yaw error cost
+        # qc = 75
+        # qyaw = 500
+        # ql = 0.05  # longitudinal error cost
+        Q_path = qc
 
         # Contouring cost
-        Jc = 0.
-        for k in range(len(e_c)):
-            Jc += np.array([e_c[k], e_l[k]]).T @ Q_path @ np.array([e_c[k], e_l[k]])
 
-        #     # unpacking the real signals that come from the system
-        #     x_r, y_r, yaw_r, vx_r, vy_r, yaw_dot_r = x_real
+        Jy = 0.
+        for e_c_k in e_y:
+            Jy += e_c_k.T * Q_path * e_c_k
+        Jyaw = 0.
+        for e_yaw_k in e_yaw:
+            Jyaw += e_yaw_k.T * qyaw * e_yaw_k
+
         dt = self.T / self.N
         # CasADi works with symbolics
         nx = self.nx
@@ -209,20 +246,36 @@ class MPCC:
         zub = []
         constraints = []
         # Create a function
-        cost = 0.
-        Q = np.eye(nx) * 3.6
-        R = np.eye(nu) * 0.02
+        cost_u = 0.
+
+        # rtau = 1e-6
+        # rDelta = 1e-6
+        rtau = 0 * 1e-2 * (1 / 1000) ** 2
+        rDelta = 0 * 1e-5 * (1 / (10 * np.pi / 180)) ** 2
+        # rVs = 1e-6
+        R = np.diag([rtau, rDelta])
+
+        # rdtau = 1e-4
+        # rdDelta = 5e-3
+        rdtau = 1 * (1 / 1000) ** 2
+        rdDelta = 1e-8 * (1 / (0.1 * np.pi / 180)) ** 2
+        # rdVs = 1e-5
+        R_del = np.diag([rdtau, rdDelta])
+
+        # Cost for vx
+        R_v = 1 * 1 / 10 ** 2
+        cost_v = 0.
 
         # Lower bound and upper bound on input
-        ulb = [0, 0, 0]
-        uub = [10., 10., 10.]
+        ulb = [-3000, -25. * np.pi / 180]
+        uub = [3000., 25. * np.pi / 180]
 
         for i in range(self.N):
             # states
             s_i = s[nx * i:nx * (i + 1)]
-            s_ip1 = s[nx * (i + 1):nx * (i + 2)]
+            s_ip1 = s[nx * (i + 1):nx * (i + 2)]  # successor state x_(k+1)
             # inputs
-            q_i = q[nu * i:nu * (i + 1)]
+            u_k = q[nu * i:nu * (i + 1)]
 
             # Decision variable
             zlb += [-np.inf] * nx
@@ -231,17 +284,32 @@ class MPCC:
             zub += uub
 
             z.append(s_i)
-            z.append(q_i)
+            z.append(u_k)
 
-            xt_ip1 = Phi(x0=s_i, p=q_i)['xf']
-            cost += s_i.T @ Q @ s_i + q_i.T @ R @ q_i
+            if i < self.N - 1:
+                u_k1 = q[nu * (i + 1):nu * (i + 2)]  # u_(k+1)
+                du_k = u_k1 - u_k
+            else:
+                du_k = 0.
+
+            xt_ip1 = Phi(x0=s_i, p=u_k)['xf']
+
+            if i < self.N - 1:
+                cost_u += u_k.T @ R @ u_k + du_k.T @ R_del @ du_k
+            else:
+                cost_u += u_k.T @ R @ u_k
+
+            # vx * Rv * vx
+            cost_v += (s_i[3] - 15) * R_v * (s_i[3] - 15)
+
             constraints.append(xt_ip1 - s_ip1)
 
         # s_N
         z.append(s_ip1)
         zlb += [-np.inf] * nx
         zub += [np.inf] * nx
-
+        # total cost
+        cost = cost_u + Jy + Jyaw + cost_v
         constraints = ca.vertcat(*constraints)
         variables = ca.vertcat(*z)
 
@@ -250,7 +318,7 @@ class MPCC:
         nlp = {'f': cost, 'g': constraints, 'x': variables}
         opt = {'print_time': 0, 'ipopt.print_level': 0}
         solver = ca.nlpsol('solver', 'ipopt', nlp, opt)
-        return solver, zlb, zub
+        return solver, zlb, zub, cost_u, Jy, Jyaw, cost_v
 
     def solve_mpc(self, current_state):
         """Solve MPC provided the current state, i.e., this
@@ -262,15 +330,33 @@ class MPCC:
         Returns:
             tuple: current input and return status pair
         """
-        solver, zlb, zub = self.controller_prep()
+        #     # unpacking the real signals that come from the system
+        x_r, y_r, yaw_r, vx_r, vy_r, omega_r, ps = current_state
+
+        solver, zlb, zub, cost_u, Jy, Jyaw, cost_v = self.controller_cost(x_r, y_r, yaw_r)
+
         g_bnd = np.zeros(self.N * self.nx)
 
         # Set the lower and upper bound of the decision variable
         # such that s0 = current_state
-        for i in range(4):
+        for i in range(self.nx):
             zlb[i] = current_state[i]
             zub[i] = current_state[i]
         sol_out = solver(lbx=zlb, ubx=zub, lbg=g_bnd, ubg=g_bnd)
+
+        u_array = []
+        for i in range(self.N):
+            initial_slice = self.nx * (i + 1) + self.nu * i
+            end_slice = self.nx * (i + 1) + self.nu * (i + 1)
+            u = ca.MX.sym(f'u{i}', self.nu, 1)
+            u = sol_out['x'][initial_slice:end_slice]
+
+        # cost_u_fun = ca.Function('cost_u', {u}, {cost_u})
+        # print(f'Y cost: {Jy}\n')
+        # print(f'Yaw cost: {Jyaw}\n')
+        # print(f'vx cost: {cost_v}\n')
+        # print(f'input cost: {cost_u}\n')
+
         return np.array(sol_out['x'][self.nx:self.nx + self.nu]), solver.stats()['return_status']
 
 

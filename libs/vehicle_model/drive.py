@@ -15,7 +15,7 @@ from libs.utils.env import world
 Veh_SIM_NUM = 100  # Number of times vehicle simulation (Simulation_resolution  = sim.dt/Veh_SIM_NUM)
 Control_SIM_NUM = Veh_SIM_NUM / 10
 
-p = VehicleParameters()
+param = VehicleParameters()
 
 
 class Car:
@@ -24,7 +24,7 @@ class Car:
         # Variable to log all the data
         self.DataLog = np.zeros((Veh_SIM_NUM * 4000, 45))
         # Model parameters
-        init_vel = 15.0
+        init_vel = 10.0
         self.x = init_x
         self.y = init_y
         self.yaw = init_yaw
@@ -42,9 +42,9 @@ class Car:
         self.ay_prev = 0
 
         # self.state = [init_vel, 0, 0, init_yaw, init_x, init_y] (these were for the bicycle model states)
-        self.state = [init_vel, 0, 0, init_vel / p.rw, init_vel / p.rw, init_vel / p.rw, init_vel / p.rw, init_yaw,
+        self.state = [init_vel, 0, 0, init_vel / param.rw, init_vel / param.rw, init_vel / param.rw, init_vel / param.rw, init_yaw,
                       init_x, init_y]
-
+        self.state_dot = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         # path data
         self.px = px
         self.py = py
@@ -77,38 +77,46 @@ class Car:
         self.rear_overhang = (self.overall_length - self.wheelbase) / 2
         self.colour = 'black'
         self.lateral_tracker = StanleyController(self.k, self.ksoft, self.kyaw, self.ksteer, self.max_steer,
-                                                 self.wheelbase, waypoints=[px, py, pyaw])
+                                                 self.wheelbase, param, waypoints=[px, py, pyaw])
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
         self.long_tracker = LongitudinalController(self.k_v, self.k_i, self.k_d)
-        self.MPC = MPCC(10, 0.1, p, self.px, self.py, self.pyaw)
+        self.MPC = MPCC(10, 0.01, param, self.px, self.py, self.pyaw)
 
     def drive(self, frame):
         # Motion Planner:
         for i in range(Veh_SIM_NUM):
             ## Motion Controllers:
             if i % 10 == 0:
-                self.MPC.controller_cost(self.x, self.y, self.yaw)
-                self.delta, self.target_id, self.crosstrack_error = \
-                    self.lateral_tracker.stanley_control(self.x, self.y, self.yaw, self.v)
-                self.total_vel_error, self.torque_vec = \
-                    self.long_tracker.long_control(self.target_vel, self.v, self.prev_vel,
-                                                   self.total_vel_error, self.dt)
-                self.prev_vel = self.v
+                # self.delta, self.target_id, self.crosstrack_error = \
+                #     self.lateral_tracker.stanley_control(self.x, self.y, self.yaw, self.v)
+                # self.total_vel_error, self.torque_vec = \
+                #     self.long_tracker.long_control(self.target_vel, self.v, self.prev_vel,
+                #                                    self.total_vel_error, self.dt)
+                # self.prev_vel = self.v
                 # self.MPC.controller()
+                ds = self.ps[11] - self.ps[10]
+                out, status = self.MPC.solve_mpc([self.x, self.y, self.yaw, self.v, self.state[1], self.state_dot[7],
+                                                  ds])
+                tau, delta = out.tolist()
+                self.delta = delta[0]
+                self.torque_vec = [tau[0]] * 4
+                print(f'Solver status: {status} \n')
+                print(f'delta: {out[1]*180/np.pi} \n')
+                print(f'tau: {out[0]} \n')
                 self.lateral_tracker.update_waypoints()
 
                 # Filter the delta output
-                self.x_del.append((1 - 1e-5 / (2 * 0.001)) * self.x_del[-1] + 1e-5 / (2 * 0.001) * self.delta)
-                self.delta = self.x_del[-1]
+                # self.x_del.append((1 - 1e-5 / (2 * 0.001)) * self.x_del[-1] + 1e-5 / (2 * 0.001) * self.delta)
+                # self.delta = self.x_del[-1]
 
             ## Vehicle model
-            self.state, self.x, self.y, self.yaw, self.v, state_dot, outputs, self.ax_prev, self.ay_prev = \
+            self.state, self.x, self.y, self.yaw, self.v, self.state_dot, outputs, self.ax_prev, self.ay_prev = \
                 self.kbm.planar_model_RK4(self.state, self.torque_vec, [1.0, 1.0, 1.0, 1.0],
-                                          [self.delta, self.delta, 0, 0], p, self.ax_prev, self.ay_prev)
+                                          [self.delta, self.delta, 0, 0], param, self.ax_prev, self.ay_prev)
 
             self.DataLog[frame * Veh_SIM_NUM + i, 0] = (frame * Veh_SIM_NUM + i) * self.kbm.dt
             self.DataLog[frame * Veh_SIM_NUM + i, 1:11] = self.state
-            self.DataLog[frame * Veh_SIM_NUM + i, 11:21] = state_dot
+            self.DataLog[frame * Veh_SIM_NUM + i, 11:21] = self.state_dot
             self.DataLog[frame * Veh_SIM_NUM + i, 21] = self.delta
             self.DataLog[frame * Veh_SIM_NUM + i, 22:26] = self.torque_vec
             self.DataLog[frame * Veh_SIM_NUM + i, 26:44] = outputs
