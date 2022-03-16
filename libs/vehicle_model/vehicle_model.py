@@ -7,11 +7,17 @@ from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 
 # Empty lists for global coordinates Vx, Vy, ax, and ay
-Vx = []
-Vy = []
-Ax = []
-Ay = []
-t_ = []
+Vx_planar = []
+Vy_planar = []
+Ax_planar = []
+Ay_planar = []
+t_planar = []
+
+Vx_mpc = []
+Vy_mpc = []
+Ax_mpc = []
+Ay_mpc = []
+t_mpc = []
 
 
 class VehicleParameters:
@@ -252,10 +258,10 @@ class VehicleModel:
         DfzyF = p.m * p.hg * p.b / ((p.a + p.b) * (p.wL + p.wR))
         DfzyR = p.m * p.hg * p.a / ((p.a + p.b) * (p.wL + p.wR))
 
-        fFLz = fFLz0  - DfzxL * ax_prev - DfzyF * ay_prev
-        fFRz = fFRz0  - DfzxR * ax_prev + DfzyF * ay_prev
-        fRLz = fRLz0  + DfzxL * ax_prev - DfzyR * ay_prev
-        fRRz = fRRz0  + DfzxR * ax_prev + DfzyR * ay_prev
+        fFLz = fFLz0 - DfzxL * ax_prev - DfzyF * ay_prev
+        fFRz = fFRz0 - DfzxR * ax_prev + DfzyF * ay_prev
+        fRLz = fRLz0 + DfzxL * ax_prev - DfzyR * ay_prev
+        fRRz = fRRz0 + DfzxR * ax_prev + DfzyR * ay_prev
 
         ## Compute tire slip Wheel velocities
         vFLxc = U - p.T * wz / 2
@@ -418,9 +424,9 @@ class VehicleModel:
         yaw = normalise_angle(yaw)
         # state_update = [U, V, wz, wFL, wFR, wRL, wRR, yaw, x, y]
         outputs = np.array([fFLx, fFRx, fRLx, fRRx,
-                   fFLy, fFRy, fRLy, fRRy,
-                   fFLz, fFRz, fRLz, fRRz,
-                   sFL, sFR, sRL, sRR, fFLxt, fFLyt])
+                            fFLy, fFRy, fRLy, fRRy,
+                            fFLz, fFRz, fRLz, fRRz,
+                            sFL, sFR, sRL, sRR, fFLxt, fFLyt])
 
         return [state_dot, vx, vy, ax, ay, outputs, axc, ayc]
 
@@ -432,59 +438,161 @@ class VehicleModel:
                                                                  delta, p, ax_prev, ay_prev)
         K3, _, _, _, _, outputs3, axc3, ayc3 = self.planar_model(np.array(state) + h / 2 * K2, tire_torques, mu_max,
                                                                  delta, p, ax_prev, ay_prev)
-        K4, _, _, _, _, outputs4, axc4, ayc4 = self.planar_model(np.array(state) + h * K3, tire_torques,mu_max,
+        K4, _, _, _, _, outputs4, axc4, ayc4 = self.planar_model(np.array(state) + h * K3, tire_torques, mu_max,
                                                                  delta, p, ax_prev, ay_prev)
 
         state_update = state + 1 / 6 * h * (K1 + 2 * K2 + 2 * K3 + K4)
         U, V, wz, wFL, wFR, wRL, wRR, yaw, x, y = state_update
-        state_dot = (K1 + 2 * K2 + 2 * K3 + K4)/6
+        state_dot = (K1 + 2 * K2 + 2 * K3 + K4) / 6
         outputs = (outputs1 + 2 * outputs2 + 2 * outputs3 + outputs4) / 6
         axc = (axc1 + 2 * axc2 + 2 * axc3 + axc4) / 6
         ayc = (ayc1 + 2 * ayc2 + 2 * ayc3 + ayc4) / 6
 
         return [state_update, x, y, yaw, U, state_dot, outputs, axc, ayc]
 
+    def SystemModel(self, t, states, u, param, xs=None, us=None):
+        """Compute the right-hand side of the ODEs
+
+        Args:
+            states (array-like): State vector
+            u (array-like): Input vector
+            p (object of class parameter): Parameters
+            xs (array-like, optional): steady-state
+            us (array-like, optional): steady-state input
+
+        Returns:
+            array-like: dx/dt
+            :param us:
+            :param xs:
+            :param states:
+            :param param:
+        """
+        if xs is not None:
+            # Assume x is in deviation variable form
+            states = [states[i] + xs[i] for i in range(6)]
+        if us is not None:
+            # Assume u is in deviation variable form
+            u = [u[i] + us[i] for i in range(2)]
+
+        # parameters of the vehicle:
+        m = param.m
+        lf = param.a
+        lr = param.b
+        Izz = param.Izz
+        rw = param.rw
+        # tire parameters for the pajecka model - front
+        Bf = param.BFL
+        Cf = param.CFL
+        Df = param.DFL
+        # tire parameters for the pajecka model - rear
+        Br = param.BRL
+        Cr = param.CRL
+        Dr = param.DRL
+        # Longitudinal parameters
+        Cm1 = 0.287
+        Cm2 = 0.0545
+        Cr0 = 0.0518
+        Cr2 = 0.00035
+
+        # states
+        x = states[0]
+        y = states[1]
+        yaw = states[2]
+        vx = states[3]
+        vy = states[4]
+        omega = states[5]
+        # system inputs
+        tau = u[0]
+        delta = u[1]
+        # v_theta = u[2]
+
+        # Slip angles for the front and rear
+        alpha_f = - delta + np.arctan((vy + lf * omega) / (vx))
+        alpha_r = np.arctan((-vy + lr * omega) / (vx))
+        # alpha_f = - np.arctan((omega * lf + vy) / (vx + 0.0001)) + delta
+        # alpha_r = np.arctan((omega * lr - vy) / (vx + 0.0001))
+
+        Nf = lr / (lr+lf) * m * 9.81
+        Nr = lf / (lr+lf) * m * 9.81
+        # Lateral Forces
+        Ffy = Df * np.sin(Cf * np.arctan(Bf * alpha_f)) * Nf
+        Fry = Dr * np.sin(Cr * np.arctan(Br * alpha_r)) * Nr
+        # Frx = (Cm1 - Cm2 * vx) * tau - Cr0 - Cr2 * vx**2
+        Frx = tau * rw / m
+
+        dx = vx * np.cos(yaw) - vy * np.sin(yaw)
+        dy = vx * np.sin(yaw) + vy * np.cos(yaw)
+        dyaw = omega
+        dvx = 1 / m * (Frx - Ffy * np.sin(delta) + m * vy * omega)
+        dvy = 1 / m * (Fry - Ffy * np.cos(delta) - m * vx * omega)
+        domega = 1 / Izz * (Ffy * lf * np.cos(delta) - Fry * lr)
+        # dtheta = v_theta
+
+        state_dot = [dx, dy, dyaw, dvx, dvy, domega]
+
+        return state_dot
+
 
 def planar_integrate(t, state, tire_torques, mu_max, delta, p):
-    veh = VehicleModel()
-    [state_dot, vx, vy, ax, ay] = veh.planar_model(state, tire_torques, mu_max, delta, p)
-    Vx.append(vx)
-    Vy.append(vy)
-    Ax.append(ax)
-    Ay.append(ay)
-    t_.append(t)
-    return state_dot
+    if t == 0:
+        axc_prev = 0
+        ayc_prev = 0
 
+    veh = VehicleModel()
+    [state_dot, vx, vy, ax, ay, outputs, axc_next, ayc_next] = veh.planar_model(state, tire_torques, mu_max, delta, p,
+                                                                                0, 0)
+    axc_prev = axc_next
+    ayc_prev = ayc_next
+
+    Vx_planar.append(vx)
+    Vy_planar.append(vy)
+    Ax_planar.append(ax)
+    Ay_planar.append(ay)
+    t_planar.append(t)
+    return state_dot
 
 def main():
     # print("This script is not meant to be executable, and should be used as a library.")
     p1 = VehicleParameters()
     U_init = 8.33
-    state0 = [U_init, 0, 0,  # U, V, wz
+    state0_planar = [U_init, 0, 0,  # U, V, wz
               U_init / p1.rw, U_init / p1.rw, U_init / p1.rw, U_init / p1.rw,  # wFL, wFR, wRL, wRR
               0, 0, 0]  # yaw, x, y
-    print("Initial condition:", state0)
+    print("Initial condition:", state0_planar)
 
     tire_torques = [0, 0, 0, 0]
     delta = pi / 180 * array([2, 2, 0, 0])
     mu_max = [1, 1, 1, 1]  # road surface maximum friction
 
-    # planar_integrate(state0, 0, tire_torques, mu_max, delta, p1)
-    t_array = linspace(0, 30, 10000)
-    sol = solve_ivp(planar_integrate, [0, 30], state0, args=(tire_torques, mu_max, delta, p1), method='RK45',
+    # planar_integrate(state0, tire_torques, mu_max, delta, p1)
+    t_array = linspace(0, 10, 1000)
+    sol_planar = solve_ivp(planar_integrate, [0, 30], state0_planar, args=(tire_torques, mu_max, delta, p1), method='RK45',
                     dense_output=True,
                     t_eval=t_array)
-    t = sol.t
-    U, V, wz, wFL, wFR, wRL, wRR, yaw, x, y = sol.y
 
-    f = interp1d(t_, Vy)
-    Vy_interp = Vx_interp = np.zeros(len(t))
-    for i, tt in enumerate(t):
-        Vy_interp[i] = f(tt)
+    # SystemModel(self, t, states, u, param, xs=None, us=None)
+    veh = VehicleModel()
+    state0_mpc = [0, 0, 0, U_init, 0, 0]
+    sol_mpc = solve_ivp(veh.SystemModel, [0, 30], state0_mpc, args=([tire_torques[0], delta[0]], p1), method='RK45',
+                    dense_output=True,
+                    t_eval=t_array)
+
+    t_planar = sol_planar.t
+    U_planar, V_planar, wz_planar, wFL_planar, wFR_planar, wRL_planar, wRR_planar, yaw_planar, x_planar, y_planar = sol_planar.y
+
+    t_mpc = sol_mpc.t
+    x_mpc, y_mpc, yaw_mpc, vx_mpc, vy_mpc, omega_mpc = sol_mpc.y
+
+    # f = interp1d(t_planar, Vy_planar)
+    # Vy_interp = Vx_interp = np.zeros(len(t_planar))
+    # for i, tt in enumerate(t_planar):
+    #     Vy_interp[i] = f(tt)
 
     plt.figure()
     plt.title('x-y position')
-    plt.plot(x, y)
+    plt.plot(x_planar, y_planar)
+    plt.plot(x_mpc, y_mpc)
+    plt.legend(['Planar model', 'MPC model'])
     plt.xlabel('X (m)')
     plt.ylabel('Y (m)')
 
@@ -492,28 +600,28 @@ def main():
     plt.title('yaw rate')
     plt.xlabel('Time (Sec)')
     plt.ylabel('Yaw rate (rad/sec)')
-    plt.plot(t, yaw)
-
-    plt.figure()
-    plt.title('Lateral Velocity')
-    plt.xlabel('Time (Sec)')
-    plt.ylabel('Velocity (m/sec)')
-    plt.plot(t, Vy_interp, label='interp')
-    # plt.plot(t_, Vy, label='real')
-    plt.legend()
+    plt.plot(t_planar, yaw_planar)
+    plt.plot(t_mpc, yaw_mpc)
+    # plt.figure()
+    # plt.title('Lateral Velocity')
+    # plt.xlabel('Time (Sec)')
+    # plt.ylabel('Velocity (m/sec)')
+    # plt.plot(t_planar, Vy_interp, label='interp')
+    # # plt.plot(t_, Vy, label='real')
+    # plt.legend()
     #
     plt.figure()
     plt.title('U')
     plt.xlabel('Time (Sec)')
     plt.ylabel('Velocity (m/sec)')
-    plt.plot(t, U, label='U')
-
+    plt.plot(t_planar, U_planar, label='U')
+    plt.plot(t_mpc, vx_mpc, label='U-mpc')
     plt.figure()
     plt.title('V')
     plt.xlabel('Time (Sec)')
     plt.ylabel('Velocity (m/sec)')
-    plt.plot(t, V, label='V')
-
+    plt.plot(t_planar, V_planar, label='V')
+    plt.plot(t_mpc, vy_mpc, label='V-mpc')
     plt.show()
 
 

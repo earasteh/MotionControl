@@ -9,7 +9,7 @@ from libs.utils.env import world
 ###
 # Frame rate = 0.1
 # Vehicle simulation time = 1e-4
-# Controller time = 1e-2 - 1e-3
+# Controller time = 1e-3
 # ###
 
 Veh_SIM_NUM = 100  # Number of times vehicle simulation (Simulation_resolution  = sim.dt/Veh_SIM_NUM)
@@ -80,7 +80,7 @@ class Car:
                                                  self.wheelbase, param, waypoints=[px, py, pyaw])
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
         self.long_tracker = LongitudinalController(self.k_v, self.k_i, self.k_d)
-        self.MPC = MPCC(10, 0.01, param, self.px, self.py, self.pyaw)
+        self.MPC = MPCC(3, 1e-3, param, self.px, self.py, self.pyaw)
 
     def drive(self, frame):
         # Motion Planner:
