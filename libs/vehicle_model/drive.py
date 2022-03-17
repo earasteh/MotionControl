@@ -80,7 +80,7 @@ class Car:
                                                  self.wheelbase, param, waypoints=[px, py, pyaw])
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
         self.long_tracker = LongitudinalController(self.k_v, self.k_i, self.k_d)
-        self.MPC = MPCC(3, 1e-3, param, self.px, self.py, self.pyaw)
+        self.MPC = MPCC(10, 1e-3, param, self.px, self.py, self.pyaw)
 
     def drive(self, frame):
         # Motion Planner:

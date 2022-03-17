@@ -208,8 +208,8 @@ class MPCC:
         e_y = selected_d
         e_yaw = yaw - selected_pyaw
 
-        qc = 5e3 * 1 / 0.5 ** 2  # lateral error cost
-        qyaw = 1e3 * 1 / (20 * np.pi / 180) ** 2  # yaw error cost
+        qc = 1e-2 * 1 / 0.5 ** 2  # lateral error cost
+        qyaw = 1 * 1 / (20 * np.pi / 180) ** 2  # yaw error cost
         # qc = 75
         # qyaw = 500
         # ql = 0.05  # longitudinal error cost
@@ -258,7 +258,7 @@ class MPCC:
         # rdtau = 1e-4
         # rdDelta = 5e-3
         rdtau = 1 * 1 * (1 / 1000) ** 2
-        rdDelta = 1 * 1e-8 * (1 / (0.1 * np.pi / 180)) ** 2
+        rdDelta = 1e6 * (1 / (0.1 * np.pi / 180)) ** 2
         # rdVs = 1e-5
         R_del = np.diag([rdtau, rdDelta])
 
@@ -267,9 +267,8 @@ class MPCC:
         cost_v = 0.
 
         # Lower bound and upper bound on input
-        ulb = [-3000, -35. * np.pi / 180]
-        uub = [3000., 35. * np.pi / 180]
-
+        ulb = [-3000, -25. * np.pi / 180]
+        uub = [3000., +25. * np.pi / 180]
         for i in range(self.N):
             # states
             s_i = s[nx * i:nx * (i + 1)]
@@ -290,10 +289,10 @@ class MPCC:
                 u_k1 = q[nu * (i + 1):nu * (i + 2)]  # u_(k+1)
                 du_k = u_k1 - u_k
             else:
-                du_k = 0.
+                du_k = ca.vertcat([0., 0.])
 
             xt_ip1 = Phi(x0=s_i, p=u_k)['xf']
-
+            # du'*R_du*du + u'*R*u
             if i < self.N - 1:
                 cost_u += u_k.T @ R @ u_k + du_k.T @ R_del @ du_k
             else:
@@ -303,6 +302,7 @@ class MPCC:
             cost_v += (s_i[3] - 15) * R_v * (s_i[3] - 15)
 
             constraints.append(xt_ip1 - s_ip1)
+            constraints.append(du_k)
 
         # s_N
         z.append(s_ip1)
@@ -334,15 +334,27 @@ class MPCC:
         x_r, y_r, yaw_r, vx_r, vy_r, omega_r, ps = current_state
 
         solver, zlb, zub, cost_u, Jy, Jyaw, cost_v = self.controller_cost(x_r, y_r, yaw_r)
+        equality_constraints = np.zeros(self.N * self.nx)
+        g_bnd = equality_constraints
+        dtau_lb = -300
+        dtau_ub = +300
+        ddelta_lb = -3 * np.pi/180
+        ddelta_ub = +3 * np.pi/180
+        g_bnd_lb = []
+        g_bnd_ub = []
+        for i in range(self.N):
+            g_bnd_lb.append([0, 0, 0, 0, 0, 0, dtau_lb, ddelta_lb])
+            g_bnd_ub.append([0, 0, 0, 0, 0, 0, dtau_ub, ddelta_ub])
 
-        g_bnd = np.zeros(self.N * self.nx)
+        g_bnd_lb = ca.vertcat(*g_bnd_lb)
+        g_bnd_ub = ca.vertcat(*g_bnd_ub)
 
         # Set the lower and upper bound of the decision variable
         # such that s0 = current_state
         for i in range(self.nx):
             zlb[i] = current_state[i]
             zub[i] = current_state[i]
-        sol_out = solver(lbx=zlb, ubx=zub, lbg=g_bnd, ubg=g_bnd)
+        sol_out = solver(lbx=zlb, ubx=zub, lbg=g_bnd_lb, ubg=g_bnd_ub)
 
         u_array = []
         for i in range(self.N):
