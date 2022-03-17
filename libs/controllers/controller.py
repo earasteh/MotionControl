@@ -113,9 +113,9 @@ class MPCC:
         # casadi setup
         self.nx = 6
         self.nu = 2
-        self.controller_cost(0, 0, 0)
+        self.controller_cost(0, 0, 0, np.array([0, 0]))
 
-    def SystemModel(self, states, u, param, xs=None, us=None):
+    def SystemModel(self, states, u, param):
         """Compute the right-hand side of the ODEs
 
         Args:
@@ -191,7 +191,7 @@ class MPCC:
 
         return state_dot
 
-    def controller_cost(self, x, y, yaw):
+    def controller_cost(self, x, y, yaw, uk_prev_step):
         """prepares the MPC variables and calculates the cost"""
 
         # Calculating the contouring cost
@@ -267,14 +267,16 @@ class MPCC:
         cost_v = 0.
 
         # Lower bound and upper bound on input
-        ulb = [-3000, -25. * np.pi / 180]
-        uub = [3000., +25. * np.pi / 180]
+        ulb = [-300, -2. * np.pi / 180]
+        uub = [300., +2. * np.pi / 180]
+
+        uk_prev = uk_prev_step
         for i in range(self.N):
             # states
             s_i = s[nx * i:nx * (i + 1)]
             s_ip1 = s[nx * (i + 1):nx * (i + 2)]  # successor state x_(k+1)
             # inputs
-            u_k = q[nu * i:nu * (i + 1)]
+            du_k = q[nu * i:nu * (i + 1)]
 
             # Decision variable
             zlb += [-np.inf] * nx
@@ -283,26 +285,31 @@ class MPCC:
             zub += uub
 
             z.append(s_i)
-            z.append(u_k)
+            z.append(du_k)
 
-            if i < self.N - 1:
-                u_k1 = q[nu * (i + 1):nu * (i + 2)]  # u_(k+1)
-                du_k = u_k1 - u_k
-            else:
-                du_k = ca.vertcat([0., 0.])
+            # uk = u_(k-1) + du
+            uk = uk_prev + du_k
 
-            xt_ip1 = Phi(x0=s_i, p=u_k)['xf']
+            # if i < self.N - 1:
+            #     u_k1 = q[nu * (i + 1):nu * (i + 2)]  # u_(k+1)
+            #     du_k = u_k1 - u_k
+            # else:
+            #     du_k = ca.vertcat([0., 0.])
+
+            xt_ip1 = Phi(x0=s_i, p=uk)['xf']
+            uk_prev = uk
             # du'*R_du*du + u'*R*u
-            if i < self.N - 1:
-                cost_u += u_k.T @ R @ u_k + du_k.T @ R_del @ du_k
-            else:
-                cost_u += u_k.T @ R @ u_k
+            cost_u = du_k.T @ R_del @ du_k
+            # if i < self.N - 1:
+            #     cost_u += u_k.T @ R @ u_k + du_k.T @ R_del @ du_k
+            # else:
+            #     cost_u += u_k.T @ R @ u_k
 
             # vx * Rv * vx
             cost_v += (s_i[3] - 15) * R_v * (s_i[3] - 15)
 
             constraints.append(xt_ip1 - s_ip1)
-            constraints.append(du_k)
+            # constraints.append(du_k)
 
         # s_N
         z.append(s_ip1)
@@ -320,7 +327,7 @@ class MPCC:
         solver = ca.nlpsol('solver', 'ipopt', nlp, opt)
         return solver, zlb, zub, cost_u, Jy, Jyaw, cost_v
 
-    def solve_mpc(self, current_state):
+    def solve_mpc(self, current_state, uk_prev_step):
         """Solve MPC provided the current state, i.e., this
         function is u = h(x), which is the implicit control law of MPC.
 
@@ -329,39 +336,40 @@ class MPCC:
 
         Returns:
             tuple: current input and return status pair
+            :param uk_prev: previous input
         """
         #     # unpacking the real signals that come from the system
         x_r, y_r, yaw_r, vx_r, vy_r, omega_r, ps = current_state
 
-        solver, zlb, zub, cost_u, Jy, Jyaw, cost_v = self.controller_cost(x_r, y_r, yaw_r)
+        solver, zlb, zub, cost_u, Jy, Jyaw, cost_v = self.controller_cost(x_r, y_r, yaw_r, uk_prev_step)
         equality_constraints = np.zeros(self.N * self.nx)
         g_bnd = equality_constraints
-        dtau_lb = -300
-        dtau_ub = +300
-        ddelta_lb = -3 * np.pi/180
-        ddelta_ub = +3 * np.pi/180
-        g_bnd_lb = []
-        g_bnd_ub = []
-        for i in range(self.N):
-            g_bnd_lb.append([0, 0, 0, 0, 0, 0, dtau_lb, ddelta_lb])
-            g_bnd_ub.append([0, 0, 0, 0, 0, 0, dtau_ub, ddelta_ub])
+        # dtau_lb = -300
+        # dtau_ub = +300
+        # ddelta_lb = -3 * np.pi/180
+        # ddelta_ub = +3 * np.pi/180
+        # g_bnd_lb = []
+        # g_bnd_ub = []
+        # for i in range(self.N):
+        #     g_bnd_lb.append([0, 0, 0, 0, 0, 0, dtau_lb, ddelta_lb])
+        #     g_bnd_ub.append([0, 0, 0, 0, 0, 0, dtau_ub, ddelta_ub])
 
-        g_bnd_lb = ca.vertcat(*g_bnd_lb)
-        g_bnd_ub = ca.vertcat(*g_bnd_ub)
+        # g_bnd_lb = ca.vertcat(*g_bnd_lb)
+        # g_bnd_ub = ca.vertcat(*g_bnd_ub)
 
         # Set the lower and upper bound of the decision variable
         # such that s0 = current_state
         for i in range(self.nx):
             zlb[i] = current_state[i]
             zub[i] = current_state[i]
-        sol_out = solver(lbx=zlb, ubx=zub, lbg=g_bnd_lb, ubg=g_bnd_ub)
+        sol_out = solver(lbx=zlb, ubx=zub, lbg=g_bnd, ubg=g_bnd)
 
-        u_array = []
-        for i in range(self.N):
-            initial_slice = self.nx * (i + 1) + self.nu * i
-            end_slice = self.nx * (i + 1) + self.nu * (i + 1)
-            u = ca.MX.sym(f'u{i}', self.nu, 1)
-            u = sol_out['x'][initial_slice:end_slice]
+        # u_array = []
+        # for i in range(self.N):
+        #     initial_slice = self.nx * (i + 1) + self.nu * i
+        #     end_slice = self.nx * (i + 1) + self.nu * (i + 1)
+        #     u = ca.MX.sym(f'u{i}', self.nu, 1)
+        #     u = sol_out['x'][initial_slice:end_slice]
 
         # cost_u_fun = ca.Function('cost_u', {u}, {cost_u})
         # print(f'Y cost: {Jy}\n')
