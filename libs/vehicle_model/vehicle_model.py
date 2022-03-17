@@ -467,13 +467,6 @@ class VehicleModel:
             :param states:
             :param param:
         """
-        if xs is not None:
-            # Assume x is in deviation variable form
-            states = [states[i] + xs[i] for i in range(6)]
-        if us is not None:
-            # Assume u is in deviation variable form
-            u = [u[i] + us[i] for i in range(2)]
-
         # parameters of the vehicle:
         m = param.m
         lf = param.a
@@ -507,7 +500,7 @@ class VehicleModel:
         # v_theta = u[2]
 
         # Slip angles for the front and rear
-        alpha_f = - delta + np.arctan((vy + lf * omega) / (vx))
+        alpha_f = -delta - np.arctan((vy + lf * omega) / (vx))
         alpha_r = np.arctan((-vy + lr * omega) / (vx))
         # alpha_f = - np.arctan((omega * lf + vy) / (vx + 0.0001)) + delta
         # alpha_r = np.arctan((omega * lr - vy) / (vx + 0.0001))
@@ -517,8 +510,8 @@ class VehicleModel:
         # Lateral Forces
         Ffy = Df * np.sin(Cf * np.arctan(Bf * alpha_f)) * Nf
         Fry = Dr * np.sin(Cr * np.arctan(Br * alpha_r)) * Nr
-        # Frx = (Cm1 - Cm2 * vx) * tau - Cr0 - Cr2 * vx**2
-        Frx = tau * rw / m
+        # Frx = (Cm1 - Cm2 * vx) * D - Cr0 - Cr2 * vx**2
+        Frx = tau / rw
 
         dx = vx * np.cos(yaw) - vy * np.sin(yaw)
         dy = vx * np.sin(yaw) + vy * np.cos(yaw)
@@ -565,15 +558,15 @@ def main():
     mu_max = [1, 1, 1, 1]  # road surface maximum friction
 
     # planar_integrate(state0, tire_torques, mu_max, delta, p1)
-    t_array = linspace(0, 10, 1000)
-    sol_planar = solve_ivp(planar_integrate, [0, 30], state0_planar, args=(tire_torques, mu_max, delta, p1), method='RK45',
+    t_array = linspace(0, 5, 100)
+    sol_planar = solve_ivp(planar_integrate, [0, 5], state0_planar, args=(tire_torques, mu_max, delta, p1), method='RK45',
                     dense_output=True,
                     t_eval=t_array)
 
     # SystemModel(self, t, states, u, param, xs=None, us=None)
     veh = VehicleModel()
     state0_mpc = [0, 0, 0, U_init, 0, 0]
-    sol_mpc = solve_ivp(veh.SystemModel, [0, 30], state0_mpc, args=([tire_torques[0], delta[0]], p1), method='RK45',
+    sol_mpc = solve_ivp(veh.SystemModel, [0, 5], state0_mpc, args=([tire_torques[0], delta[0]], p1), method='RK45',
                     dense_output=True,
                     t_eval=t_array)
 

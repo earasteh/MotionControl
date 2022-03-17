@@ -132,7 +132,6 @@ class MPCC:
             :param states:
             :param param:
         """
-
         # parameters of the vehicle:
         m = param.m
         lf = param.a
@@ -164,19 +163,21 @@ class MPCC:
         tau = u[0]
         delta = u[1]
         # v_theta = u[2]
+        # v_theta = u[2]
 
         # Slip angles for the front and rear
-        alpha_f = - delta + np.arctan((vy + lf * omega) / (vx + 0.00001))
-        alpha_r = np.arctan((-vy + lr * omega) / (vx + 0.00001))
-        # Normal Forces
+        alpha_f = -delta - np.arctan((vy + lf * omega) / (vx+0.001))
+        alpha_r = np.arctan((-vy + lr * omega) / (vx+0.001))
+        # alpha_f = - np.arctan((omega * lf + vy) / (vx + 0.0001)) + delta
+        # alpha_r = np.arctan((omega * lr - vy) / (vx + 0.0001))
+
         Nf = lr / (lr+lf) * m * 9.81
         Nr = lf / (lr+lf) * m * 9.81
         # Lateral Forces
         Ffy = Df * np.sin(Cf * np.arctan(Bf * alpha_f)) * Nf
         Fry = Dr * np.sin(Cr * np.arctan(Br * alpha_r)) * Nr
-        # Longitudinal Forces
-        # Frx = (Cm1 - Cm2 * vx) * tau - Cr0 - Cr2 * vx**2
-        Frx = tau * rw / m
+        # Frx = (Cm1 - Cm2 * vx) * D - Cr0 - Cr2 * vx**2
+        Frx = tau / rw
 
         dx = vx * np.cos(yaw) - vy * np.sin(yaw)
         dy = vx * np.sin(yaw) + vy * np.cos(yaw)
@@ -207,15 +208,13 @@ class MPCC:
         e_y = selected_d
         e_yaw = yaw - selected_pyaw
 
-        qc = 5e1 * 1 / 0.5 ** 2  # lateral error cost
+        qc = 5e3 * 1 / 0.5 ** 2  # lateral error cost
         qyaw = 1e3 * 1 / (20 * np.pi / 180) ** 2  # yaw error cost
         # qc = 75
         # qyaw = 500
         # ql = 0.05  # longitudinal error cost
         Q_path = qc
-
         # Contouring cost
-
         Jy = 0.
         for e_c_k in e_y:
             Jy += e_c_k.T * Q_path * e_c_k
@@ -258,18 +257,18 @@ class MPCC:
 
         # rdtau = 1e-4
         # rdDelta = 5e-3
-        rdtau = 0 * 1 * (1 / 1000) ** 2
-        rdDelta = 0 * 1e-8 * (1 / (0.1 * np.pi / 180)) ** 2
+        rdtau = 1 * 1 * (1 / 1000) ** 2
+        rdDelta = 1 * 1e-8 * (1 / (0.1 * np.pi / 180)) ** 2
         # rdVs = 1e-5
         R_del = np.diag([rdtau, rdDelta])
 
         # Cost for vx
-        R_v = 0 * 1 / 10 ** 2
+        R_v = 1 * 1 / 10 ** 2
         cost_v = 0.
 
         # Lower bound and upper bound on input
-        ulb = [-3000, -24. * np.pi / 180]
-        uub = [3000., 25. * np.pi / 180]
+        ulb = [-3000, -35. * np.pi / 180]
+        uub = [3000., 35. * np.pi / 180]
 
         for i in range(self.N):
             # states

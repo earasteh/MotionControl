@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 Bf1 = 20.6357
 Cf1 = 1.5047
 Df1 = 1.1233
+
 Bf2 = 2.579
 Cf2 = 1.2
 Df2 = 0.192
