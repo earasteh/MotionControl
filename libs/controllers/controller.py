@@ -113,7 +113,7 @@ class MPCC:
         # casadi setup
         self.nx = 6
         self.nu = 2
-        self.controller_cost(0, 0, 0, np.array([200, 1*np.pi/180]))
+        self.controller_cost(0, 0, 0)
 
     def SystemModel(self, states, u, param):
         """Compute the right-hand side of the ODEs
@@ -191,7 +191,7 @@ class MPCC:
 
         return state_dot
 
-    def controller_cost(self, x, y, yaw, uk_prev_step):
+    def controller_cost(self, x, y, yaw):
         """prepares the MPC variables and calculates the cost"""
 
         # Calculating the contouring cost
@@ -200,7 +200,7 @@ class MPCC:
         selected_px = self.px[target_index:target_index+2]
         selected_py = self.py[target_index:target_index+2]
         selected_pyaw = self.pyaw[target_index:target_index+2]
-        selected_d = d[target_index:target_index + 2]  # lateral error
+        selected_d = d[target_index:target_index + 20]  # lateral error
 
         # e_c = np.sin(selected_pyaw) * (x - selected_px) - np.cos(selected_pyaw) * (y - selected_py)
         # e_l = -np.cos(selected_pyaw) * (x - selected_px) - np.sin(selected_pyaw) * (y - selected_py)
@@ -247,6 +247,7 @@ class MPCC:
         constraints = []
         # Create a function
         cost_u = 0.
+        cost_du = 0.
 
         # rtau = 1e-6
         # rDelta = 1e-6
@@ -257,8 +258,8 @@ class MPCC:
 
         # rdtau = 1e-4
         # rdDelta = 5e-3
-        rdtau = 0 * 1 * (1 / 1000) ** 2
-        rdDelta = 0 * (1 / (0.1 * np.pi / 180)) ** 2
+        rdtau = 1 * 1 * (1 / 1000) ** 2
+        rdDelta = 1 * (1 / (0.1 * np.pi / 180)) ** 2
         # rdVs = 1e-5
         R_del = np.diag([rdtau, rdDelta])
 
@@ -309,11 +310,8 @@ class MPCC:
             xt_ip1 = Phi(x0=s1_i, p=s2_i + du_k)['xf']
 
             # du'*R_du*du + u'*R*u
-            cost_u = du_k.T @ R_del @ du_k
-            # if i < self.N - 1:
-            #     cost_u += u_k.T @ R @ u_k + du_k.T @ R_del @ du_k
-            # else:
-            #     cost_u += u_k.T @ R @ u_k
+            # cost_du += du_k.T @ R_del @ du_k
+            # cost_u += s2_i.T @ R @ s2_i
 
             # vx * Rv * vx
             cost_v += (s1_i[3] - 15) * R_v * (s1_i[3] - 15)
@@ -322,13 +320,11 @@ class MPCC:
             constraints.append(s2_ip1 - s2_i - du_k)  # s2_(k+1) = s2_(k) + du(k)
 
         # s_N
-        # s1_ip1 = x_tilda_ip1[0:nx]
-        # s2_ip1 = x_tilda_ip1[nx:]
         z.append(x_tilda_ip1)
         zlb += [-np.inf] * (nx + nu)
         zub += [np.inf] * (nx + nu)
         # total cost
-        cost = cost_u + Jy + Jyaw + cost_v
+        cost = cost_du + cost_u + Jy + Jyaw + cost_v
         constraints = ca.vertcat(*constraints)
         variables = ca.vertcat(*z)
 
@@ -354,21 +350,9 @@ class MPCC:
         #     # unpacking the real signals that come from the system
         x_r, y_r, yaw_r, vx_r, vy_r, omega_r, ps = current_state
 
-        solver, zlb, zub, cost_u, Jy, Jyaw, cost_v = self.controller_cost(x_r, y_r, yaw_r, uk_prev_step)
+        solver, zlb, zub, cost_u, Jy, Jyaw, cost_v = self.controller_cost(x_r, y_r, yaw_r)
         equality_constraints = np.zeros(self.N * (self.nx+self.nu))
         g_bnd = equality_constraints
-        # tau_lb = -3000
-        # tau_ub = +3000
-        # delta_lb = -10 * np.pi / 180
-        # delta_ub = +10 * np.pi / 180
-        # g_bnd_lb = []
-        # g_bnd_ub = []
-        # for i in range(self.N):
-        #     g_bnd_lb.append([0, 0, 0, 0, 0, 0, tau_lb, delta_lb])
-        #     g_bnd_ub.append([0, 0, 0, 0, 0, 0, tau_ub, delta_ub])
-
-        # g_bnd_lb = ca.vertcat(*g_bnd_lb)
-        # g_bnd_ub = ca.vertcat(*g_bnd_ub)
 
         # Set the lower and upper bound of the decision variable
         # such that s0 = current_state
