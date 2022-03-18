@@ -200,19 +200,19 @@ class MPCC:
         # selected_px = self.px[target_index:target_index+15]
         # selected_py = self.py[target_index:target_index+15]
 
-        target_slice = max(int(15 / 0.05 * self.T), 1)
+        # target_slice = max(int(15 / 0.05 * self.T), 1)
+        #
+        # selected_pyaw = self.pyaw[target_index:target_index + target_slice]
+        # selected_d = d[target_index:target_index + target_slice]  # lateral error
 
-        selected_pyaw = self.pyaw[target_index:target_index + target_slice]
-        selected_d = d[target_index:target_index + target_slice]  # lateral error
+        # selected_n = max(int(target_slice / self.N), 1)
 
-        selected_n = max(int(target_slice / self.N), 1)
-
-        selected_pyaw = selected_pyaw[0]
+        selected_pyaw = 0
         # selected_d = selected_d[0]
         selected_d = 10
 
-        qc = 10000 * 1 / 0.5 ** 2  # lateral error cost
-        qyaw = 1000 * 1 / (1 * np.pi / 180) ** 2  # yaw error cost
+        qc = 50000 * 1 / 0.5 ** 2  # lateral error cost
+        qyaw = 2000 * 1 / (1 * np.pi / 180) ** 2  # yaw error cost
 
         Jy = 0.
         Jyaw = 0.
@@ -249,7 +249,7 @@ class MPCC:
 
 
         rdtau = 20 * 1 * (1 / 1000) ** 2
-        rdDelta = 0.01 * (1 / (0.1 * np.pi / 180)) ** 2
+        rdDelta = 0.03 * (1 / (0.1 * np.pi / 180)) ** 2
         R_del = np.diag([rdtau, rdDelta])
 
         # Cost for vx

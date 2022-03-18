@@ -79,7 +79,7 @@ def main():
         return outline, fr, rr, fl, rl, rear_axle
 
     anim = FuncAnimation(fig, animate, frames=sim.frames, interval=interval, repeat=sim.loop)
-    # anim.save('resources/animation.gif', fps=10)   #Uncomment to save the animation
+    # anim.save('results/animation.gif', fps=10)   #Uncomment to save the animation
     plt.show()
 
     plot_results(data_cleaning(car.DataLog))
