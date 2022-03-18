@@ -150,6 +150,14 @@ world.road_bound_add(x4, y4, 'left')
 # find the middle of the road
 world.road_middle()
 
+
+straight = Env()
+x1, y1 = Env.strightline(0, 400, 0, world.path.ds)
+straight.road_bound_add(x1, y1, 'right')
+x1, y1 = Env.strightline(0, 400, 20, world.path.ds)
+straight.road_bound_add(x1, y1, 'left')
+straight.road_middle()
+
 def main():
     plt.figure()
     # plt.plot(path1.px, path1.py)

@@ -208,28 +208,15 @@ class MPCC:
         selected_n = max(int(target_slice / self.N), 1)
 
         selected_pyaw = selected_pyaw[0]
-        selected_d = selected_d[0]
+        # selected_d = selected_d[0]
+        selected_d = 10
 
-        # e_c = np.sin(selected_pyaw) * (x - selected_px) - np.cos(selected_pyaw) * (y - selected_py)
-        # e_l = -np.cos(selected_pyaw) * (x - selected_px) - np.sin(selected_pyaw) * (y - selected_py)
-        # e_y = y - selected_py
-        # e_y = selected_d
-        # e_yaw = yaw - selected_pyaw
+        qc = 10000 * 1 / 0.5 ** 2  # lateral error cost
+        qyaw = 1000 * 1 / (1 * np.pi / 180) ** 2  # yaw error cost
 
-        # qc = 1000 * 1 / 0.5 ** 2  # lateral error cost
-        # qyaw = 1000 * 1 / (1 * np.pi / 180) ** 2  # yaw error cost
-        qc = 75
-        qyaw = 500
-        # ql = 0.05  # longitudinal error cost
-        # Contouring cost
         Jy = 0.
         Jyaw = 0.
-        # for e_c_k in e_y:
-        #     Jy += e_c_k.T * Q_path * e_c_k
-        # Jyaw = 0.
-        # for e_yaw_k in e_yaw:
-        #     Jyaw += e_yaw_k.T * qyaw * e_yaw_k
-        #
+
         # print(f'Lateral error cost is: {Jy}')
         # print(f'Yaw error cost is: {Jyaw}')
 
@@ -256,17 +243,17 @@ class MPCC:
         cost_u = 0.
         cost_du = 0.
 
-        rtau = 0 * 1e-2 * (1 / 1000) ** 2
-        rDelta = 0 * 1e-5 * (1 / (10 * np.pi / 180)) ** 2
+        rtau = 0 * (1 / 1000) ** 2
+        rDelta = 0 * (1 / (10 * np.pi / 180)) ** 2
         R = np.diag([rtau, rDelta])
 
 
-        rdtau = 10 * 1 * (1 / 1000) ** 2
-        rdDelta = 0.1 * (1 / (0.1 * np.pi / 180)) ** 2
+        rdtau = 20 * 1 * (1 / 1000) ** 2
+        rdDelta = 0.01 * (1 / (0.1 * np.pi / 180)) ** 2
         R_del = np.diag([rdtau, rdDelta])
 
         # Cost for vx
-        R_v = 1 * 1 / 10 ** 2
+        R_v = 10 * 1 / 1 ** 2
         cost_v = 0.
 
         # Lower bound and upper bound on input
@@ -327,8 +314,20 @@ class MPCC:
 
         # s_N
         z.append(x_tilda_ip1)
-        zlb += [-np.inf] * (nx + nu)
-        zub += [np.inf] * (nx + nu)
+
+        terminal_u_ub = [np.inf, np.inf]
+        terminal_u_lb = [-np.inf, -np.inf]
+
+        terminal_x_ub = [np.inf, 15, np.inf, np.inf, 20, np.inf]
+        terminal_x_lb = [-np.inf, 5, -np.inf, -np.inf, 0, -np.inf]
+
+        TERM_LB = terminal_x_lb + terminal_u_lb
+        TERM_UB = terminal_x_ub + terminal_u_ub
+
+        zlb += TERM_LB
+        zub += TERM_UB
+        # zlb += [-np.inf] * (nx + nu)
+        # zub += [np.inf] * (nx + nu)
         # total cost
         cost = cost_du + cost_u + Jy + Jyaw + cost_v
         constraints = ca.vertcat(*constraints)

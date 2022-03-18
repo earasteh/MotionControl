@@ -2,12 +2,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import os
-from libs.utils.env import world
+from libs.utils.env import straight
 
 """
 This file cleans and labels the data and then plots all the results
 """
-
+world = straight
 
 # Variables to track and plot:
 # U, V, wz, wFL, wFR, wRL, wRR, yaw, x, y = self.state
@@ -214,7 +214,7 @@ def plot_results(DataLog_pd, figsize_input=None):
     plt.fill(world.obstacle_x, world.obstacle_y, color='red', zorder=2)
     # ax.set_xlim(-10, 100)
     # ax.set_ylim(-5, 25)
-    ax.set_aspect('equal')
+    # ax.set_aspect('equal')
     ax.legend(['Generated Path', 'Ref'])
     plt.xlabel('X (meters)')
     plt.ylabel('Y (meters)')

@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation
 from libs.utils.car_description import Description
-from libs.utils.env import world  # Importing road definition
+from libs.utils.env import straight  # Importing road definition
 from libs.vehicle_model.drive import Veh_SIM_NUM, Control_SIM_NUM, Car
 from libs.utils.plots import plot_results, data_cleaning
 
@@ -11,7 +11,7 @@ class Simulation:
 
     def __init__(self):
         fps = 100.0
-        t_final = 15.0
+        t_final = 10.0
         self.frame_dt = 1 / fps
         self.veh_dt = self.frame_dt / Veh_SIM_NUM
         self.controller_dt = self.frame_dt / Control_SIM_NUM
@@ -22,9 +22,11 @@ class Simulation:
 
 def main():
     sim = Simulation()
-    path = world.path
+    # path = world.path
+    path = straight.path
+    world = straight
 
-    car = Car(path.px[10], path.py[10]+2, path.pyaw[10], path.px, path.py, path.pyaw, path.s, sim.veh_dt)
+    car = Car(path.px[10], path.py[10]+5, path.pyaw[10], path.px, path.py, path.pyaw, path.s, sim.veh_dt)
     desc = Description(car.overall_length, car.overall_width, car.rear_overhang, car.tyre_diameter, car.tyre_width,
                        car.axle_track, car.wheelbase)
 
