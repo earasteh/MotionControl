@@ -42,7 +42,8 @@ class Car:
         self.ay_prev = 0
 
         # self.state = [init_vel, 0, 0, init_yaw, init_x, init_y] (these were for the bicycle model states)
-        self.state = [init_vel, 0, 0, init_vel / param.rw, init_vel / param.rw, init_vel / param.rw, init_vel / param.rw, init_yaw,
+        self.state = [init_vel, 0, 0, init_vel / param.rw, init_vel / param.rw, init_vel / param.rw,
+                      init_vel / param.rw, init_yaw,
                       init_x, init_y]
         self.state_dot = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         # path data
@@ -81,7 +82,8 @@ class Car:
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
         self.long_tracker = LongitudinalController(self.k_v, self.k_i, self.k_d)
         self.MPC = MPCC(10, 1e-3, param, self.px, self.py, self.pyaw)
-        self.uk_prev_step = np.array([1*np.pi/180, 200])
+        self.uk_prev_step = np.array([0, -1 * np.pi / 180])
+
     def drive(self, frame):
         # Motion Planner:
         for i in range(Veh_SIM_NUM):
@@ -97,12 +99,12 @@ class Car:
                 ds = self.ps[11] - self.ps[10]
                 out, status = self.MPC.solve_mpc([self.x, self.y, self.yaw, self.v, self.state[1], self.state_dot[7],
                                                   ds], self.uk_prev_step)
-                self.uk_prev_step = out
+                self.uk_prev_step = out.reshape((2,))
                 tau, delta = out.tolist()
                 self.delta = delta[0]
                 self.torque_vec = [tau[0]] * 4
                 print(f'Solver status: {status} \n')
-                print(f'delta: {self.delta*180/np.pi} \n')
+                print(f'delta: {self.delta * 180 / np.pi} \n')
                 print(f'tau: {self.torque_vec[0]} \n')
                 self.lateral_tracker.update_waypoints()
 
