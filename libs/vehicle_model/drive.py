@@ -81,7 +81,7 @@ class Car:
                                                  self.wheelbase, param, waypoints=[px, py, pyaw])
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
         self.long_tracker = LongitudinalController(self.k_v, self.k_i, self.k_d)
-        self.MPC = MPCC(5, 0.05, param, self.px, self.py, self.pyaw)
+        self.MPC = MPCC(5, 0.001, param, self.px, self.py, self.pyaw)
         self.uk_prev_step = np.array([0, -1 * np.pi / 180])
 
     def drive(self, frame):
