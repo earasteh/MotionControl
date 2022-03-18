@@ -166,7 +166,7 @@ class MPCC:
         # v_theta = u[2]
 
         # Slip angles for the front and rear
-        alpha_f = -delta - np.arctan((vy + lf * omega) / (vx + 0.001))
+        alpha_f = delta - np.arctan((vy + lf * omega) / (vx + 0.001))
         alpha_r = np.arctan((-vy + lr * omega) / (vx + 0.001))
         # alpha_f = - np.arctan((omega * lf + vy) / (vx + 0.0001)) + delta
         # alpha_r = np.arctan((omega * lr - vy) / (vx + 0.0001))
@@ -174,8 +174,8 @@ class MPCC:
         Nf = lr / (lr + lf) * m * 9.81
         Nr = lf / (lr + lf) * m * 9.81
         # Lateral Forces
-        Ffy = Df * np.sin(Cf * np.arctan(Bf * alpha_f)) * Nf
-        Fry = Dr * np.sin(Cr * np.arctan(Br * alpha_r)) * Nr
+        Ffy = 2 * Df * np.sin(Cf * np.arctan(Bf * alpha_f)) * Nf
+        Fry = 2 * Dr * np.sin(Cr * np.arctan(Br * alpha_r)) * Nr
         # Frx = (Cm1 - Cm2 * vx) * D - Cr0 - Cr2 * vx**2
         Frx = tau / rw
 
@@ -183,7 +183,7 @@ class MPCC:
         dy = vx * np.sin(yaw) + vy * np.cos(yaw)
         dyaw = omega
         dvx = 1 / m * (Frx - Ffy * np.sin(delta) + m * vy * omega)
-        dvy = 1 / m * (Fry - Ffy * np.cos(delta) - m * vx * omega)
+        dvy = 1 / m * (Fry + Ffy * np.cos(delta) - m * vx * omega)
         domega = 1 / Izz * (Ffy * lf * np.cos(delta) - Fry * lr)
         # dtheta = v_theta
 
@@ -197,36 +197,43 @@ class MPCC:
         # Calculating the contouring cost
         target_index, dx, dy, absolute_error, d = StanleyController.find_target_path_id(self.px, self.py, x, y, yaw,
                                                                                         self.params)
-        selected_px = self.px[target_index:target_index+2]
-        selected_py = self.py[target_index:target_index+2]
-        selected_pyaw = self.pyaw[target_index:target_index+2]
-        selected_d = d[target_index:target_index + 20]  # lateral error
+        # selected_px = self.px[target_index:target_index+15]
+        # selected_py = self.py[target_index:target_index+15]
+
+        target_slice = max(int(15 / 0.05 * self.T), 1)
+
+        selected_pyaw = self.pyaw[target_index:target_index + target_slice]
+        selected_d = d[target_index:target_index + target_slice]  # lateral error
+
+        selected_n = max(int(target_slice / self.N), 1)
+
+        selected_pyaw = selected_pyaw[0]
+        selected_d = selected_d[0]
 
         # e_c = np.sin(selected_pyaw) * (x - selected_px) - np.cos(selected_pyaw) * (y - selected_py)
         # e_l = -np.cos(selected_pyaw) * (x - selected_px) - np.sin(selected_pyaw) * (y - selected_py)
         # e_y = y - selected_py
-        e_y = selected_d
-        e_yaw = yaw - selected_pyaw
+        # e_y = selected_d
+        # e_yaw = yaw - selected_pyaw
 
-        qc = 1 * 1 / 0.5 ** 2  # lateral error cost
-        qyaw = 1 * 1 / (20 * np.pi / 180) ** 2  # yaw error cost
-        # qc = 75
-        # qyaw = 500
+        # qc = 1000 * 1 / 0.5 ** 2  # lateral error cost
+        # qyaw = 1000 * 1 / (1 * np.pi / 180) ** 2  # yaw error cost
+        qc = 75
+        qyaw = 500
         # ql = 0.05  # longitudinal error cost
-        Q_path = qc
         # Contouring cost
         Jy = 0.
-        for e_c_k in e_y:
-            Jy += e_c_k.T * Q_path * e_c_k
         Jyaw = 0.
-        for e_yaw_k in e_yaw:
-            Jyaw += e_yaw_k.T * qyaw * e_yaw_k
-
-        print(f'Lateral error cost is: {Jy}')
-        print(f'Yaw error cost is: {Jyaw}')
+        # for e_c_k in e_y:
+        #     Jy += e_c_k.T * Q_path * e_c_k
+        # Jyaw = 0.
+        # for e_yaw_k in e_yaw:
+        #     Jyaw += e_yaw_k.T * qyaw * e_yaw_k
+        #
+        # print(f'Lateral error cost is: {Jy}')
+        # print(f'Yaw error cost is: {Jyaw}')
 
         dt = self.T / self.N
-        # CasADi works with symbolics
         nx = self.nx
         nu = self.nu
 
@@ -249,18 +256,13 @@ class MPCC:
         cost_u = 0.
         cost_du = 0.
 
-        # rtau = 1e-6
-        # rDelta = 1e-6
         rtau = 0 * 1e-2 * (1 / 1000) ** 2
         rDelta = 0 * 1e-5 * (1 / (10 * np.pi / 180)) ** 2
-        # rVs = 1e-6
         R = np.diag([rtau, rDelta])
 
-        # rdtau = 1e-4
-        # rdDelta = 5e-3
-        rdtau = 1 * 1 * (1 / 1000) ** 2
-        rdDelta = 1 * (1 / (0.1 * np.pi / 180)) ** 2
-        # rdVs = 1e-5
+
+        rdtau = 10 * 1 * (1 / 1000) ** 2
+        rdDelta = 0.1 * (1 / (0.1 * np.pi / 180)) ** 2
         R_del = np.diag([rdtau, rdDelta])
 
         # Cost for vx
@@ -268,11 +270,11 @@ class MPCC:
         cost_v = 0.
 
         # Lower bound and upper bound on input
-        du_lb = [-300, -1. * np.pi / 180]
-        du_ub = [300., +1. * np.pi / 180]
+        du_lb = [-100, -1.5 * np.pi / 180]
+        du_ub = [100., +1.5 * np.pi / 180]
 
-        u_lb = [-3000, -10 * np.pi / 180]
-        u_ub = [3000, 10 * np.pi / 180]
+        u_lb = [-1000, -10 * np.pi / 180]
+        u_ub = [1000, 10 * np.pi / 180]
 
         for i in range(self.N):
             # (x_tilda) is the augmented state (because we want to constraint both u and du):
@@ -309,8 +311,12 @@ class MPCC:
 
             xt_ip1 = Phi(x0=s1_i, p=s2_i + du_k)['xf']
 
+            # cost
+            Jy += (s1_i[1] - selected_d).T @ qc @ (s1_i[1] - selected_d)
+            Jyaw += (s1_i[2] - selected_pyaw).T @ qyaw @ (s1_i[2] - selected_pyaw)
+
             # du'*R_du*du + u'*R*u
-            # cost_du += du_k.T @ R_del @ du_k
+            cost_du += du_k.T @ R_del @ du_k
             # cost_u += s2_i.T @ R @ s2_i
 
             # vx * Rv * vx
@@ -329,10 +335,9 @@ class MPCC:
         variables = ca.vertcat(*z)
 
         # Create the optimization problem
-        g_bnd = np.zeros(self.N * (nx + nu))
-        nlp = {'f': cost, 'g': constraints, 'x': variables}
-        opt = {'print_time': 0, 'ipopt.print_level': 0}
-        solver = ca.nlpsol('solver', 'ipopt', nlp, opt)
+        qp = {'f': cost, 'g': constraints, 'x': variables}
+        opt = {'print_time': 0, 'nWSR': 20000, 'printLevel': 'low'}
+        solver = ca.qpsol('solver', 'qpoases', qp, opt)
         return solver, zlb, zub, cost_u, Jy, Jyaw, cost_v
 
     def solve_mpc(self, current_state, uk_prev_step):
@@ -348,16 +353,16 @@ class MPCC:
             :param current_state:
         """
         #     # unpacking the real signals that come from the system
-        x_r, y_r, yaw_r, vx_r, vy_r, omega_r, ps = current_state
+        x_r, y_r, yaw_r, vx_r, vy_r, omega_r = current_state
 
         solver, zlb, zub, cost_u, Jy, Jyaw, cost_v = self.controller_cost(x_r, y_r, yaw_r)
-        equality_constraints = np.zeros(self.N * (self.nx+self.nu))
+        equality_constraints = np.zeros(self.N * (self.nx + self.nu))
         g_bnd = equality_constraints
 
         # Set the lower and upper bound of the decision variable
         # such that s0 = current_state
-        current_xtilda_state = np.concatenate([np.array(current_state[0:6]), uk_prev_step[:]])
-        for i in range(self.nx+self.nu):
+        current_xtilda_state = np.concatenate([np.array(current_state), uk_prev_step[:]])
+        for i in range(self.nx + self.nu):
             zlb[i] = current_xtilda_state[i]
             zub[i] = current_xtilda_state[i]
         sol_out = solver(lbx=zlb, ubx=zub, lbg=g_bnd, ubg=g_bnd)
@@ -375,7 +380,8 @@ class MPCC:
         # print(f'vx cost: {cost_v}\n')
         # print(f'input cost: {cost_u}\n')
 
-        return np.array(sol_out['x'][2*self.nx+2*self.nu:2*self.nx + 3*self.nu]), solver.stats()['return_status']
+        return np.array(sol_out['x'][2 * self.nx + 2 * self.nu:2 * self.nx + 3 * self.nu]), solver.stats()[
+            'return_status']
 
 
 class LongitudinalController:

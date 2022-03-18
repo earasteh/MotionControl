@@ -500,7 +500,7 @@ class VehicleModel:
         # v_theta = u[2]
 
         # Slip angles for the front and rear
-        alpha_f = -delta - np.arctan((vy + lf * omega) / (vx))
+        alpha_f = delta - np.arctan((vy + lf * omega) / (vx))
         alpha_r = np.arctan((-vy + lr * omega) / (vx))
         # alpha_f = - np.arctan((omega * lf + vy) / (vx + 0.0001)) + delta
         # alpha_r = np.arctan((omega * lr - vy) / (vx + 0.0001))
@@ -508,8 +508,8 @@ class VehicleModel:
         Nf = lr / (lr+lf) * m * 9.81
         Nr = lf / (lr+lf) * m * 9.81
         # Lateral Forces
-        Ffy = Df * np.sin(Cf * np.arctan(Bf * alpha_f)) * Nf
-        Fry = Dr * np.sin(Cr * np.arctan(Br * alpha_r)) * Nr
+        Ffy = 2 * Df * np.sin(Cf * np.arctan(Bf * alpha_f)) * Nf
+        Fry = 2 * Dr * np.sin(Cr * np.arctan(Br * alpha_r)) * Nr
         # Frx = (Cm1 - Cm2 * vx) * D - Cr0 - Cr2 * vx**2
         Frx = tau / rw
 
@@ -517,7 +517,7 @@ class VehicleModel:
         dy = vx * np.sin(yaw) + vy * np.cos(yaw)
         dyaw = omega
         dvx = 1 / m * (Frx - Ffy * np.sin(delta) + m * vy * omega)
-        dvy = 1 / m * (Fry - Ffy * np.cos(delta) - m * vx * omega)
+        dvy = 1 / m * (Fry + Ffy * np.cos(delta) - m * vx * omega)
         domega = 1 / Izz * (Ffy * lf * np.cos(delta) - Fry * lr)
         # dtheta = v_theta
 

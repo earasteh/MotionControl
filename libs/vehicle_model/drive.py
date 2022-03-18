@@ -81,8 +81,12 @@ class Car:
                                                  self.wheelbase, param, waypoints=[px, py, pyaw])
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
         self.long_tracker = LongitudinalController(self.k_v, self.k_i, self.k_d)
-        self.MPC = MPCC(5, 0.05, param, self.px, self.py, self.pyaw)
-        self.uk_prev_step = np.array([0, -1 * np.pi / 180])
+        T = 0.05
+        dt = 0.01
+        N = int(T/dt)
+        print(f'N is {N}')
+        self.MPC = MPCC(N, T, param, self.px, self.py, self.pyaw)
+        self.uk_prev_step = np.array([10, -0.5 * np.pi / 180])
 
     def drive(self, frame):
         # Motion Planner:
@@ -96,9 +100,8 @@ class Car:
                 #                                    self.total_vel_error, self.dt)
                 # self.prev_vel = self.v
                 # self.MPC.controller()
-                ds = self.ps[11] - self.ps[10]
-                out, status = self.MPC.solve_mpc([self.x, self.y, self.yaw, self.v, self.state[1], self.state_dot[7],
-                                                  ds], self.uk_prev_step)
+                out, status = self.MPC.solve_mpc([self.x, self.y, self.yaw, self.v, self.state[1], self.state_dot[7]],
+                                                 self.uk_prev_step)
                 self.uk_prev_step = out.reshape((2,))
                 tau, delta = out.tolist()
                 self.delta = delta[0]
