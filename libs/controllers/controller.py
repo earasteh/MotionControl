@@ -166,13 +166,13 @@ class MPCC:
         # v_theta = u[2]
 
         # Slip angles for the front and rear
-        alpha_f = -delta - np.arctan((vy + lf * omega) / (vx+0.001))
-        alpha_r = np.arctan((-vy + lr * omega) / (vx+0.001))
+        alpha_f = -delta - np.arctan((vy + lf * omega) / (vx + 0.001))
+        alpha_r = np.arctan((-vy + lr * omega) / (vx + 0.001))
         # alpha_f = - np.arctan((omega * lf + vy) / (vx + 0.0001)) + delta
         # alpha_r = np.arctan((omega * lr - vy) / (vx + 0.0001))
 
-        Nf = lr / (lr+lf) * m * 9.81
-        Nr = lf / (lr+lf) * m * 9.81
+        Nf = lr / (lr + lf) * m * 9.81
+        Nr = lf / (lr + lf) * m * 9.81
         # Lateral Forces
         Ffy = Df * np.sin(Cf * np.arctan(Bf * alpha_f)) * Nf
         Fry = Dr * np.sin(Cr * np.arctan(Br * alpha_r)) * Nr
@@ -196,11 +196,11 @@ class MPCC:
 
         # Calculating the contouring cost
         target_index, dx, dy, absolute_error, d = StanleyController.find_target_path_id(self.px, self.py, x, y, yaw,
-                                                                                     self.params)
+                                                                                        self.params)
         selected_px = self.px[target_index:target_index + 200]
         selected_py = self.py[target_index:target_index + 200]
         selected_pyaw = self.pyaw[target_index:target_index + 200]
-        selected_d = d[target_index:target_index + 200] # lateral error
+        selected_d = d[target_index:target_index + 200]  # lateral error
 
         # e_c = np.sin(selected_pyaw) * (x - selected_px) - np.cos(selected_pyaw) * (y - selected_py)
         # e_l = -np.cos(selected_pyaw) * (x - selected_px) - np.sin(selected_pyaw) * (y - selected_py)
@@ -238,7 +238,7 @@ class MPCC:
         Phi = ca.integrator("Phi", "cvodes", f, {'tf': dt})
         # # Define the decision variable and constraints
         q = ca.vertcat(*[ca.MX.sym(f'u{i}', nu, 1) for i in range(self.N)])
-        s = ca.vertcat(*[ca.MX.sym(f'x{i}', nx, 1) for i in range(self.N + 1)])
+        s = ca.vertcat(*[ca.MX.sym(f'x{i}', nx + nu, 1) for i in range(self.N + 1)])
         # decision variable
         z = []
         # decision variable, lower and upper bounds
@@ -267,14 +267,33 @@ class MPCC:
         cost_v = 0.
 
         # Lower bound and upper bound on input
-        ulb = [-300, -2. * np.pi / 180]
-        uub = [300., +2. * np.pi / 180]
+        ulb = [-300, -1. * np.pi / 180]
+        uub = [300., +1. * np.pi / 180]
 
-        uk_prev = uk_prev_step
         for i in range(self.N):
-            # states
-            s_i = s[nx * i:nx * (i + 1)]
-            s_ip1 = s[nx * (i + 1):nx * (i + 2)]  # successor state x_(k+1)
+            # (x_tilda) is the augmented state (because we want to constraint both u and du):
+            # s1_i = x_{k} -> system states
+            # s2_i = u_{k} -> inputs
+            x_tilda = s[i*(nx+nu):(i+1)*(nx+nu)]
+            s1_i = x_tilda[0:nx]
+            s2_i = x_tilda[nx:]
+            # if i == 0:
+            #     s1_i = s[0:nx]
+            # else:
+            #     s1_i = s[nx * i + nu * (i - 1):nx * (i + 1)]
+            #
+            # if i == 0:
+            #     s2_i = uk_prev_step
+            # else:
+            #     s2_i = s[nx * (i + 1) + nu * i:nx * (i + 1) + nu * (i + 1)]
+            #
+            # # successor states
+            x_tilda_ip1 = s[(i+1) * (nx + nu):(i + 2) * (nx + nu)]
+            s1_ip1 = x_tilda_ip1[0:nx]
+            s2_ip1 = x_tilda_ip1[nx:]
+            # s1_ip1 = s[nx * (i + 1) + nu * (i + 1):nx * (i + 2) + nu * (i + 1)]  # successor state x_(k+1)
+            # s2_ip1 = s[nx * (i + 2) + nu * (i + 1):nx * (i + 2) + nu * (i + 2)]  # s2_i = u + du
+
             # inputs
             du_k = q[nu * i:nu * (i + 1)]
 
@@ -284,11 +303,8 @@ class MPCC:
             zlb += ulb
             zub += uub
 
-            z.append(s_i)
-            z.append(du_k)
-
-            # uk = u_(k-1) + du
-            uk = uk_prev + du_k
+            z.append(s1_i)
+            z.append(s2_i)
 
             # if i < self.N - 1:
             #     u_k1 = q[nu * (i + 1):nu * (i + 2)]  # u_(k+1)
@@ -296,8 +312,8 @@ class MPCC:
             # else:
             #     du_k = ca.vertcat([0., 0.])
 
-            xt_ip1 = Phi(x0=s_i, p=uk)['xf']
-            uk_prev = uk
+            xt_ip1 = Phi(x0=s1_i, p=s2_i+du_k)['xf']
+
             # du'*R_du*du + u'*R*u
             cost_u = du_k.T @ R_del @ du_k
             # if i < self.N - 1:
@@ -306,22 +322,25 @@ class MPCC:
             #     cost_u += u_k.T @ R @ u_k
 
             # vx * Rv * vx
-            cost_v += (s_i[3] - 15) * R_v * (s_i[3] - 15)
+            cost_v += (s1_i[3] - 15) * R_v * (s1_i[3] - 15)
 
-            constraints.append(xt_ip1 - s_ip1)
-            # constraints.append(du_k)
+            constraints.append(xt_ip1 - s1_ip1)
+            constraints.append(s2_ip1 - s2_i - du_k) # s2_(k+1) = s2_(k) + du(k)
 
         # s_N
-        z.append(s_ip1)
-        zlb += [-np.inf] * nx
-        zub += [np.inf] * nx
+        s1_ip1 = x_tilda_ip1[0:nx]
+        s2_ip1 = x_tilda_ip1[nx:]
+        z.append(s1_ip1)
+        z.append(s2_ip1)
+        zlb += [-np.inf] * (nx+nu)
+        zub += [np.inf] * (nx+nu)
         # total cost
         cost = cost_u + Jy + Jyaw + cost_v
         constraints = ca.vertcat(*constraints)
         variables = ca.vertcat(*z)
 
         # Create the optimization problem
-        g_bnd = np.zeros(self.N * nx)
+        g_bnd = np.zeros(self.N * (nx+nu))
         nlp = {'f': cost, 'g': constraints, 'x': variables}
         opt = {'print_time': 0, 'ipopt.print_level': 0}
         solver = ca.nlpsol('solver', 'ipopt', nlp, opt)
@@ -336,33 +355,34 @@ class MPCC:
 
         Returns:
             tuple: current input and return status pair
-            :param uk_prev: previous input
+            :param uk_prev_step: previous input
+            :param current_state:
         """
         #     # unpacking the real signals that come from the system
         x_r, y_r, yaw_r, vx_r, vy_r, omega_r, ps = current_state
 
         solver, zlb, zub, cost_u, Jy, Jyaw, cost_v = self.controller_cost(x_r, y_r, yaw_r, uk_prev_step)
-        equality_constraints = np.zeros(self.N * self.nx)
-        g_bnd = equality_constraints
-        # dtau_lb = -300
-        # dtau_ub = +300
-        # ddelta_lb = -3 * np.pi/180
-        # ddelta_ub = +3 * np.pi/180
-        # g_bnd_lb = []
-        # g_bnd_ub = []
-        # for i in range(self.N):
-        #     g_bnd_lb.append([0, 0, 0, 0, 0, 0, dtau_lb, ddelta_lb])
-        #     g_bnd_ub.append([0, 0, 0, 0, 0, 0, dtau_ub, ddelta_ub])
+        # equality_constraints = np.zeros(self.N * self.nx)
+        # g_bnd = equality_constraints
+        tau_lb = -3000
+        tau_ub = +3000
+        delta_lb = -10 * np.pi/180
+        delta_ub = +10 * np.pi/180
+        g_bnd_lb = []
+        g_bnd_ub = []
+        for i in range(self.N):
+            g_bnd_lb.append([0, 0, 0, 0, 0, 0, tau_lb, delta_lb])
+            g_bnd_ub.append([0, 0, 0, 0, 0, 0, tau_ub, delta_ub])
 
-        # g_bnd_lb = ca.vertcat(*g_bnd_lb)
-        # g_bnd_ub = ca.vertcat(*g_bnd_ub)
+        g_bnd_lb = ca.vertcat(*g_bnd_lb)
+        g_bnd_ub = ca.vertcat(*g_bnd_ub)
 
         # Set the lower and upper bound of the decision variable
         # such that s0 = current_state
         for i in range(self.nx):
             zlb[i] = current_state[i]
             zub[i] = current_state[i]
-        sol_out = solver(lbx=zlb, ubx=zub, lbg=g_bnd, ubg=g_bnd)
+        sol_out = solver(lbx=zlb, ubx=zub, lbg=g_bnd_lb, ubg=g_bnd_ub)
 
         # u_array = []
         # for i in range(self.N):

@@ -81,7 +81,7 @@ class Car:
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
         self.long_tracker = LongitudinalController(self.k_v, self.k_i, self.k_d)
         self.MPC = MPCC(10, 1e-3, param, self.px, self.py, self.pyaw)
-        self.uk_prev_step = np.array([0, 0])
+        self.uk_prev_step = np.array([1*np.pi/180, 200])
     def drive(self, frame):
         # Motion Planner:
         for i in range(Veh_SIM_NUM):
@@ -99,11 +99,11 @@ class Car:
                                                   ds], self.uk_prev_step)
                 self.uk_prev_step = out
                 tau, delta = out.tolist()
-                self.delta += delta[0]
-                self.torque_vec = [self.torque_vec[0]+tau[0]] * 4
+                self.delta = delta[0]
+                self.torque_vec = [tau[0]] * 4
                 print(f'Solver status: {status} \n')
                 print(f'delta: {self.delta*180/np.pi} \n')
-                print(f'tau: {self.torque_vec[0]+tau[0]} \n')
+                print(f'tau: {self.torque_vec[0]} \n')
                 self.lateral_tracker.update_waypoints()
 
                 # Filter the delta output
