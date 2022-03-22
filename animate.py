@@ -5,6 +5,7 @@ from libs.utils.car_description import Description
 from libs.utils.env import straight  # Importing road definition
 from libs.vehicle_model.drive import Veh_SIM_NUM, Control_SIM_NUM, Car
 from libs.utils.plots import plot_results, data_cleaning
+import time
 
 
 class Simulation:
@@ -21,6 +22,7 @@ class Simulation:
 
 
 def main():
+    tic = time.perf_counter()
     sim = Simulation()
     # path = world.path
     path = straight.path
@@ -82,6 +84,9 @@ def main():
     # anim.save('results/animation.gif', fps=10)   #Uncomment to save the animation
     plt.show()
 
+    toc = time.perf_counter()
+
+    print(f'time is = {toc-tic}')
     plot_results(data_cleaning(car.DataLog))
 
     plt.close('all')

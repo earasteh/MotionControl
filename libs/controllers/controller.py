@@ -337,6 +337,9 @@ class MPCC:
         qp = {'f': cost, 'g': constraints, 'x': variables}
         opt = {'print_time': 0, 'nWSR': 20000, 'printLevel': 'low'}
         solver = ca.qpsol('solver', 'qpoases', qp, opt)
+        # nlp = {'f': cost, 'g': constraints, 'x': variables}
+        # opt = {'print_time': 0, 'ipopt.print_level': 0}
+        # solver = ca.nlpsol('solver', 'ipopt', nlp, opt)
         return solver, zlb, zub, cost_u, Jy, Jyaw, cost_v
 
     def solve_mpc(self, current_state, uk_prev_step):

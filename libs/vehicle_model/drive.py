@@ -81,7 +81,7 @@ class Car:
                                                  self.wheelbase, param, waypoints=[px, py, pyaw])
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
         self.long_tracker = LongitudinalController(self.k_v, self.k_i, self.k_d)
-        T = 0.1
+        T = 0.02
         dt = 0.01
         N = int(T/dt)
         print(f'N is {N}')
