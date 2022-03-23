@@ -174,14 +174,14 @@ class MPCC:
 
         ## Dynamics
         # Slip angles for the front and rear
-        alpha_f = -delta - np.arctan((vy + lf * omega) / (vx + 0.001))
+        alpha_f = delta - np.arctan((vy + lf * omega) / (vx + 0.001))
         alpha_r = np.arctan((-vy + lr * omega) / (vx + 0.001))
 
         Nf = lr / (lr + lf) * m * 9.81
         Nr = lf / (lr + lf) * m * 9.81
         # Lateral Forces
-        Ffy = Df * np.sin(Cf * np.arctan(Bf * alpha_f)) * Nf
-        Fry = Dr * np.sin(Cr * np.arctan(Br * alpha_r)) * Nr
+        Ffy = 2 * Df * np.sin(Cf * np.arctan(Bf * alpha_f)) * Nf
+        Fry = 2 * Dr * np.sin(Cr * np.arctan(Br * alpha_r)) * Nr
         # Frx = (Cm1 - Cm2 * vx) * D - Cr0 - Cr2 * vx**2
         Frx = tau / rw
 
@@ -197,21 +197,30 @@ class MPCC:
         expr_f_impl = expr_f_expl - sym_xdot
 
         ## cost calculations
-        # Calculating the contouring cost
-        target_index, dx, dy, absolute_error, d = StanleyController.find_target_path_id(self.px, self.py, x, y, yaw,
-                                                                                        self.params)
-        selected_px = self.px[target_index:target_index+2]
-        selected_py = self.py[target_index:target_index+2]
-        selected_pyaw = self.pyaw[target_index:target_index+2]
-        selected_d = d[target_index:target_index + 20]  # lateral error
+        qc = 50000 * 1 / 0.5 ** 2  # lateral error cost
+        qyaw = 2000 * 1 / (1 * np.pi / 180) ** 2   # yaw error cost
+        qv = 10 * 1 / 1 ** 2
 
-        # e_c = np.sin(selected_pyaw) * (x - selected_px) - np.cos(selected_pyaw) * (y - selected_py)
-        # e_l = -np.cos(selected_pyaw) * (x - selected_px) - np.sin(selected_pyaw) * (y - selected_py)
-        # e_y = y - selected_py
-        e_y = selected_d
-        e_yaw = yaw - selected_pyaw
+        y_r = 0
+        yaw_r = 0
+        v_r = 15
 
-        cost_expr_y = ca.vertcat()
+        cost_expr_y = ca.vertcat(y, yaw, vx)
+        y_ref = np.array([y_r, yaw_r, v_r])
+        W = np.diag([qc, qyaw, qv])
+        cost_expr_y_e = ca.vertcat(y_r, yaw_r, v_r)
+        W_e = W
+        y_ref_e = y_ref
+
+        # Constraints
+        long_acc = dvx - vy * omega
+        lat_acc = dvy + vx * omega
+        constr_expr_h = ca.vertcat(long_acc, lat_acc)
+        bound_h = np.array([9.81, 9.81])
+        constr_Jsh = np.eye(2)
+        # cost_Z = np.eye(2)
+        # cost_z = np.zeros(2, 1)
+
 
         model = AcadosModel()
         model.f_impl_expr = expr_f_impl
@@ -220,10 +229,6 @@ class MPCC:
         model.xdot = sym_xdot
         model.u = sym_u
 
-        return model
-
-    def controller_cost(self, x, y, yaw):
-        model = self.SystemModel(self.params)
         self.ocp.model = model
         nx = model.x.size()[0]
         nu = model.u.size()[0]
@@ -231,149 +236,34 @@ class MPCC:
         ny_e = nx
 
         self.ocp.dims.N = self.N
+        self.ocp.model.T = self.T
+        self.ocp.nx = nx
+        self.ocp.nu = nu
+
+        self.ocp.cost.cost_type = 'NONLINEAR_LS'
+        self.ocp.cost.cost_type_e = 'NONLINEAR_LS'
+        self.ocp.W = W
+        self.ocp.W_e = W_e
+        self.ocp.cost.yref = y_ref
+        self.ocp.cost.yref_e = y_ref_e
+        self.ocp.model.cost_y_expr = cost_expr_y
+        self.ocp.model.cost_y_expr_e = cost_expr_y_e
+        self.ocp.constraints.constr_expr_h = constr_expr_h
+        self.ocp.constraints.bound_h = bound_h
+        self.ocp.constraints.constr_Jsh = constr_Jsh
+        self.ocp.solver_options.nlp_solver_type = 'sqp'
+        self.ocp.solver_options.qp_solver = 'full_condensing_hpipm'
+        self.ocp.solver_options.qp_solver_cond_N = 5
+        self.ocp.solver_options.integrator_type = 'ERK'
+
+        return model
+
+    def controller_cost(self, x, y, yaw):
+        model = self.SystemModel(self.params)
 
 
-        # """prepares the MPC variables and calculates the cost"""
-        #
-        # # Calculating the contouring cost
-        # target_index, dx, dy, absolute_error, d = StanleyController.find_target_path_id(self.px, self.py, x, y, yaw,
-        #                                                                                 self.params)
-        # selected_px = self.px[target_index:target_index+2]
-        # selected_py = self.py[target_index:target_index+2]
-        # selected_pyaw = self.pyaw[target_index:target_index+2]
-        # selected_d = d[target_index:target_index + 20]  # lateral error
-        #
-        # # e_c = np.sin(selected_pyaw) * (x - selected_px) - np.cos(selected_pyaw) * (y - selected_py)
-        # # e_l = -np.cos(selected_pyaw) * (x - selected_px) - np.sin(selected_pyaw) * (y - selected_py)
-        # # e_y = y - selected_py
-        # e_y = selected_d
-        # e_yaw = yaw - selected_pyaw
-        #
-        # qc = 1 * 1 / 0.5 ** 2  # lateral error cost
-        # qyaw = 1 * 1 / (20 * np.pi / 180) ** 2  # yaw error cost
-        # # qc = 75
-        # # qyaw = 500
-        # # ql = 0.05  # longitudinal error cost
-        # Q_path = qc
-        # # Contouring cost
-        # Jy = 0.
-        # for e_c_k in e_y:
-        #     Jy += e_c_k.T * Q_path * e_c_k
-        # Jyaw = 0.
-        # for e_yaw_k in e_yaw:
-        #     Jyaw += e_yaw_k.T * qyaw * e_yaw_k
-        #
-        # print(f'Lateral error cost is: {Jy}')
-        # print(f'Yaw error cost is: {Jyaw}')
-        #
-        # dt = self.T / self.N
-        # # CasADi works with symbolics
-        # nx = self.nx
-        # nu = self.nu
-        #
-        # t = ca.SX.sym("t", 1, 1)
-        # x = ca.SX.sym("x", nx, 1)
-        # u = ca.SX.sym("u", nu, 1)
-        # ode = ca.vertcat(*self.SystemModel(x, u, self.params))
-        # f = {'x': x, 't': t, 'p': u, 'ode': ode}
-        # Phi = ca.integrator("Phi", "cvodes", f, {'tf': dt})
-        # # # Define the decision variable and constraints
-        # q = ca.vertcat(*[ca.MX.sym(f'u{i}', nu, 1) for i in range(self.N)])
-        # s = ca.vertcat(*[ca.MX.sym(f'x{i}', nx + nu, 1) for i in range(self.N + 1)])
-        # # decision variable
-        # z = []
-        # # decision variable, lower and upper bounds
-        # zlb = []
-        # zub = []
-        # constraints = []
-        # # Create a function
-        # cost_u = 0.
-        # cost_du = 0.
-        #
-        # # rtau = 1e-6
-        # # rDelta = 1e-6
-        # rtau = 0 * 1e-2 * (1 / 1000) ** 2
-        # rDelta = 0 * 1e-5 * (1 / (10 * np.pi / 180)) ** 2
-        # # rVs = 1e-6
-        # R = np.diag([rtau, rDelta])
-        #
-        # # rdtau = 1e-4
-        # # rdDelta = 5e-3
-        # rdtau = 1 * 1 * (1 / 1000) ** 2
-        # rdDelta = 1 * (1 / (0.1 * np.pi / 180)) ** 2
-        # # rdVs = 1e-5
-        # R_del = np.diag([rdtau, rdDelta])
-        #
-        # # Cost for vx
-        # R_v = 1 * 1 / 10 ** 2
-        # cost_v = 0.
-        #
-        # # Lower bound and upper bound on input
-        # du_lb = [-300, -1. * np.pi / 180]
-        # du_ub = [300., +1. * np.pi / 180]
-        #
-        # u_lb = [-3000, -10 * np.pi / 180]
-        # u_ub = [3000, 10 * np.pi / 180]
-        #
-        # for i in range(self.N):
-        #     # (x_tilda) is the augmented state (because we want to constraint both u and du):
-        #     # s1_i = x_{k} -> system states
-        #     # s2_i = u_{k} -> inputs
-        #     x_tilda = s[i * (nx + nu):(i + 1) * (nx + nu)]
-        #     s1_i = x_tilda[0:nx]
-        #     s2_i = x_tilda[nx:]
-        #     # # successor states x_{k+1}
-        #     x_tilda_ip1 = s[(i + 1) * (nx + nu):(i + 2) * (nx + nu)]
-        #     s1_ip1 = x_tilda_ip1[0:nx]
-        #     s2_ip1 = x_tilda_ip1[nx:]
-        #
-        #     # inputs
-        #     du_k = q[nu * i:nu * (i + 1)]
-        #
-        #     # Decision variable
-        #     zlb += [-np.inf] * nx
-        #     zlb += u_lb
-        #     zlb += du_lb
-        #
-        #     zub += [np.inf] * nx
-        #     zub += u_ub
-        #     zub += du_ub
-        #
-        #     z.append(x_tilda)
-        #     z.append(du_k)
-        #
-        #     # if i < self.N - 1:
-        #     #     u_k1 = q[nu * (i + 1):nu * (i + 2)]  # u_(k+1)
-        #     #     du_k = u_k1 - u_k
-        #     # else:
-        #     #     du_k = ca.vertcat([0., 0.])
-        #
-        #     xt_ip1 = Phi(x0=s1_i, p=s2_i + du_k)['xf']
-        #
-        #     # du'*R_du*du + u'*R*u
-        #     # cost_du += du_k.T @ R_del @ du_k
-        #     # cost_u += s2_i.T @ R @ s2_i
-        #
-        #     # vx * Rv * vx
-        #     cost_v += (s1_i[3] - 15) * R_v * (s1_i[3] - 15)
-        #
-        #     constraints.append(xt_ip1 - s1_ip1)
-        #     constraints.append(s2_ip1 - s2_i - du_k)  # s2_(k+1) = s2_(k) + du(k)
-        #
-        # # s_N
-        # z.append(x_tilda_ip1)
-        # zlb += [-np.inf] * (nx + nu)
-        # zub += [np.inf] * (nx + nu)
-        # # total cost
-        # cost = cost_du + cost_u + Jy + Jyaw + cost_v
-        # constraints = ca.vertcat(*constraints)
-        # variables = ca.vertcat(*z)
-        #
-        # # Create the optimization problem
-        # g_bnd = np.zeros(self.N * (nx + nu))
-        # nlp = {'f': cost, 'g': constraints, 'x': variables}
-        # opt = {'print_time': 0, 'ipopt.print_level': 0}
-        # solver = ca.nlpsol('solver', 'ipopt', nlp, opt)
+
+
         return solver, zlb, zub, cost_u, Jy, Jyaw, cost_v
 
     def solve_mpc(self, current_state, uk_prev_step):
