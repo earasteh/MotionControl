@@ -113,8 +113,8 @@ class MPCC:
         # casadi setup
         self.nx = 6
         self.nu = 2
-        self.controller_cost(0, 0, 0)
         self.ocp = AcadosOcp()
+        self.controller_cost(0, 0, 0)
 
     def SystemModel(self, param):
         """Compute the right-hand side of the ODEs
@@ -167,7 +167,14 @@ class MPCC:
 
         # unnamed symoblic variables
         sym_x = ca.vertcat(x, y, yaw, vx, vy, omega)
-        sym_xdot = ca.MX.sym('xdot', self.nx, 1)
+
+        x_dot = ca.SX.sym('x_dot')
+        y_dot = ca.SX.sym('y_dot')
+        yaw_dot = ca.SX.sym('yaw_dot')
+        vx_dot = ca.SX.sym('vx_dot')
+        vy_dot = ca.SX.sym('vy_dot')
+        omega_dot = ca.SX.sym('omega_dot')
+
         sym_u = ca.vertcat(tau, delta)
         x0 = np.zeros(self.nx)
 
@@ -191,9 +198,9 @@ class MPCC:
         dvx = 1 / m * (Frx - Ffy * np.sin(delta) + m * vy * omega)
         dvy = 1 / m * (Fry - Ffy * np.cos(delta) - m * vx * omega)
         domega = 1 / Izz * (Ffy * lf * np.cos(delta) - Fry * lr)
-        # dtheta = v_theta
 
         expr_f_expl = ca.vertcat(dx, dy, dyaw, dvx, dvy, domega)
+        sym_xdot = ca.vertcat(x_dot, y_dot, yaw_dot, vx_dot, vy_dot, omega_dot)
         expr_f_impl = expr_f_expl - sym_xdot
 
         ## cost calculations
@@ -251,8 +258,8 @@ class MPCC:
         self.ocp.constraints.constr_expr_h = constr_expr_h
         self.ocp.constraints.bound_h = bound_h
         self.ocp.constraints.constr_Jsh = constr_Jsh
-        self.ocp.solver_options.nlp_solver_type = 'sqp'
-        self.ocp.solver_options.qp_solver = 'full_condensing_hpipm'
+        self.ocp.solver_options.nlp_solver_type = 'SQP'
+        self.ocp.solver_options.qp_solver = 'FULL_CONDENSING_HPIPM'
         self.ocp.solver_options.qp_solver_cond_N = 5
         self.ocp.solver_options.integrator_type = 'ERK'
 
@@ -264,7 +271,7 @@ class MPCC:
 
 
 
-        return solver, zlb, zub, cost_u, Jy, Jyaw, cost_v
+        return model
 
     def solve_mpc(self, current_state, uk_prev_step):
         """Solve MPC provided the current state, i.e., this
