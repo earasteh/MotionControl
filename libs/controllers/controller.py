@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from libs.vehicle_model.vehicle_model import VehicleParameters
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
 
+
 # params = VehicleParameters()
 
 
@@ -178,7 +179,6 @@ class MPCC:
         sym_u = ca.vertcat(tau, delta)
         x0 = np.zeros(self.nx)
 
-
         ## Dynamics
         # Slip angles for the front and rear
         alpha_f = delta - np.arctan((vy + lf * omega) / (vx + 0.001))
@@ -205,7 +205,7 @@ class MPCC:
 
         ## cost calculations
         qc = 50000 * 1 / 0.5 ** 2  # lateral error cost
-        qyaw = 2000 * 1 / (1 * np.pi / 180) ** 2   # yaw error cost
+        qyaw = 2000 * 1 / (1 * np.pi / 180) ** 2  # yaw error cost
         qv = 10 * 1 / 1 ** 2
 
         y_r = 0
@@ -228,13 +228,13 @@ class MPCC:
         # cost_Z = np.eye(2)
         # cost_z = np.zeros(2, 1)
 
-
         model = AcadosModel()
         model.f_impl_expr = expr_f_impl
         model.f_expl_expr = expr_f_expl
         model.x = sym_x
         model.xdot = sym_xdot
         model.u = sym_u
+        model.name = 'bicycle_model'
 
         self.ocp.model = model
         nx = model.x.size()[0]
@@ -243,35 +243,36 @@ class MPCC:
         ny_e = nx
 
         self.ocp.dims.N = self.N
-        self.ocp.model.T = self.T
+        # self.ocp.model.T = self.T
         self.ocp.nx = nx
         self.ocp.nu = nu
-
+        # Cost
         self.ocp.cost.cost_type = 'NONLINEAR_LS'
         self.ocp.cost.cost_type_e = 'NONLINEAR_LS'
-        self.ocp.W = W
-        self.ocp.W_e = W_e
+        self.ocp.cost.W = W
+        self.ocp.cost.W_e = W_e
         self.ocp.cost.yref = y_ref
         self.ocp.cost.yref_e = y_ref_e
         self.ocp.model.cost_y_expr = cost_expr_y
         self.ocp.model.cost_y_expr_e = cost_expr_y_e
+        # Constraints
         self.ocp.constraints.constr_expr_h = constr_expr_h
         self.ocp.constraints.bound_h = bound_h
         self.ocp.constraints.constr_Jsh = constr_Jsh
+        # Solver options
         self.ocp.solver_options.nlp_solver_type = 'SQP'
         self.ocp.solver_options.qp_solver = 'FULL_CONDENSING_HPIPM'
         self.ocp.solver_options.qp_solver_cond_N = 5
         self.ocp.solver_options.integrator_type = 'ERK'
+        self.ocp.solver_options.tf = self.T # perdiction horizon
+        ocp_solver = AcadosOcpSolver(self.ocp)
+        status = ocp_solver.solve()
+        print(status)
 
-        return model
+        return ocp_solver
 
     def controller_cost(self, x, y, yaw):
-        model = self.SystemModel(self.params)
-
-
-
-
-        return model
+        print(self.SystemModel(self.params))
 
     def solve_mpc(self, current_state, uk_prev_step):
         """Solve MPC provided the current state, i.e., this
@@ -289,13 +290,13 @@ class MPCC:
         x_r, y_r, yaw_r, vx_r, vy_r, omega_r, ps = current_state
 
         solver, zlb, zub, cost_u, Jy, Jyaw, cost_v = self.controller_cost(x_r, y_r, yaw_r)
-        equality_constraints = np.zeros(self.N * (self.nx+self.nu))
+        equality_constraints = np.zeros(self.N * (self.nx + self.nu))
         g_bnd = equality_constraints
 
         # Set the lower and upper bound of the decision variable
         # such that s0 = current_state
         current_xtilda_state = np.concatenate([np.array(current_state[0:6]), uk_prev_step[:]])
-        for i in range(self.nx+self.nu):
+        for i in range(self.nx + self.nu):
             zlb[i] = current_xtilda_state[i]
             zub[i] = current_xtilda_state[i]
         sol_out = solver(lbx=zlb, ubx=zub, lbg=g_bnd, ubg=g_bnd)
@@ -313,7 +314,8 @@ class MPCC:
         # print(f'vx cost: {cost_v}\n')
         # print(f'input cost: {cost_u}\n')
 
-        return np.array(sol_out['x'][2*self.nx+2*self.nu:2*self.nx + 3*self.nu]), solver.stats()['return_status']
+        return np.array(sol_out['x'][2 * self.nx + 2 * self.nu:2 * self.nx + 3 * self.nu]), solver.stats()[
+            'return_status']
 
 
 class LongitudinalController:
