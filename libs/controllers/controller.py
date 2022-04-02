@@ -244,8 +244,6 @@ class MPCC:
 
         self.ocp.dims.N = self.N
         # self.ocp.model.T = self.T
-        self.ocp.nx = nx
-        self.ocp.nu = nu
         # Cost
         self.ocp.cost.cost_type = 'NONLINEAR_LS'
         self.ocp.cost.cost_type_e = 'NONLINEAR_LS'
@@ -256,9 +254,10 @@ class MPCC:
         self.ocp.model.cost_y_expr = cost_expr_y
         self.ocp.model.cost_y_expr_e = cost_expr_y_e
         # Constraints
-        self.ocp.constraints.constr_expr_h = constr_expr_h
-        self.ocp.constraints.bound_h = bound_h
-        self.ocp.constraints.constr_Jsh = constr_Jsh
+        self.ocp.constraints.constr_type = 'BGH'
+        # self.ocp.constraints.constr_expr_h = constr_expr_h
+        # self.ocp.constraints.bound_h = bound_h
+        # self.ocp.constraints.constr_Jsh = constr_Jsh
         # Solver options
         self.ocp.solver_options.nlp_solver_type = 'SQP'
         self.ocp.solver_options.qp_solver = 'FULL_CONDENSING_HPIPM'

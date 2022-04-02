@@ -6,3 +6,5 @@ stuff.py
 results
 resources
 venv
+c_generated_code/
+acados_ocp_nlp.json
