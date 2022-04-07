@@ -266,12 +266,33 @@ class MPCC:
         self.ocp.solver_options.tf = self.T # perdiction horizon
         ocp_solver = AcadosOcpSolver(self.ocp)
         status = ocp_solver.solve()
-        print(status)
+        # print(status)
 
-        return ocp_solver
+        return ocp_solver, status
 
     def controller_cost(self, x, y, yaw):
-        print(self.SystemModel(self.params))
+        ocp_solver, status = self.SystemModel(self.params)
+
+        simX0 = np.ndarray((self.N+1, 6))
+        simU0 = np.ndarray((self.N, 2))
+        # get solution
+        for i in range(self.N):
+            simX0[i, :] = ocp_solver.get(i, "x")
+            simU0[i, :] = ocp_solver.get(i, "u")
+
+        simX0[self.N, :] = ocp_solver.get(self.N, "x")
+
+        print(simU0)
+
+        solver = 0
+        zlb = 0
+        zub = 0
+        cost_u = 0
+        Jy = 0
+        Jyaw = 0
+        cost_v = 0
+
+        return [solver, zlb, zub, cost_u, Jy, Jyaw, cost_v]
 
     def solve_mpc(self, current_state, uk_prev_step):
         """Solve MPC provided the current state, i.e., this
