@@ -266,9 +266,12 @@ class MPCC:
         self.ocp.solver_options.tf = self.T # perdiction horizon
         ocp_solver = AcadosOcpSolver(self.ocp)
         status = ocp_solver.solve()
-        # print(status)
+        print(status)
 
         return ocp_solver, status
+
+    def acados_settings(self, Tf, N, track_file):
+
 
     def controller_cost(self, x, y, yaw):
         ocp_solver, status = self.SystemModel(self.params)
@@ -281,8 +284,7 @@ class MPCC:
             simU0[i, :] = ocp_solver.get(i, "u")
 
         simX0[self.N, :] = ocp_solver.get(self.N, "x")
-
-        print(simU0)
+        ocp_solver.print_statistics()
 
         solver = 0
         zlb = 0
@@ -292,7 +294,7 @@ class MPCC:
         Jyaw = 0
         cost_v = 0
 
-        return [solver, zlb, zub, cost_u, Jy, Jyaw, cost_v]
+        return [simU0, solver, zlb, zub, cost_u, Jy, Jyaw, cost_v]
 
     def solve_mpc(self, current_state, uk_prev_step):
         """Solve MPC provided the current state, i.e., this
@@ -309,33 +311,9 @@ class MPCC:
         #     # unpacking the real signals that come from the system
         x_r, y_r, yaw_r, vx_r, vy_r, omega_r, ps = current_state
 
-        solver, zlb, zub, cost_u, Jy, Jyaw, cost_v = self.controller_cost(x_r, y_r, yaw_r)
-        equality_constraints = np.zeros(self.N * (self.nx + self.nu))
-        g_bnd = equality_constraints
+        simU0, zlb, zub, cost_u, Jy, Jyaw, cost_v = self.controller_cost(x_r, y_r, yaw_r)
 
-        # Set the lower and upper bound of the decision variable
-        # such that s0 = current_state
-        current_xtilda_state = np.concatenate([np.array(current_state[0:6]), uk_prev_step[:]])
-        for i in range(self.nx + self.nu):
-            zlb[i] = current_xtilda_state[i]
-            zub[i] = current_xtilda_state[i]
-        sol_out = solver(lbx=zlb, ubx=zub, lbg=g_bnd, ubg=g_bnd)
-
-        # u_array = []
-        # for i in range(self.N):
-        #     initial_slice = self.nx * (i + 1) + self.nu * i
-        #     end_slice = self.nx * (i + 1) + self.nu * (i + 1)
-        #     u = ca.MX.sym(f'u{i}', self.nu, 1)
-        #     u = sol_out['x'][initial_slice:end_slice]
-
-        # cost_u_fun = ca.Function('cost_u', {u}, {cost_u})
-        # print(f'Y cost: {Jy}\n')
-        # print(f'Yaw cost: {Jyaw}\n')
-        # print(f'vx cost: {cost_v}\n')
-        # print(f'input cost: {cost_u}\n')
-
-        return np.array(sol_out['x'][2 * self.nx + 2 * self.nu:2 * self.nx + 3 * self.nu]), solver.stats()[
-            'return_status']
+        return np.array(simU0[0, :])
 
 
 class LongitudinalController:
