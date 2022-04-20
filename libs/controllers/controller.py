@@ -1,9 +1,46 @@
+#
+# Copyright 2019 Gianluca Frison, Dimitris Kouzoupis, Robin Verschueren,
+# Andrea Zanelli, Niels van Duijkeren, Jonathan Frey, Tommaso Sartor,
+# Branimir Novoselnik, Rien Quirynen, Rezart Qelibari, Dang Doan,
+# Jonas Koenemann, Yutao Chen, Tobias Schöls, Jonas Schlagenhauf, Moritz Diehl
+#
+# This file is part of acados.
+#
+# The 2-Clause BSD License
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice,
+# this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.;
+#
+
+# author: Daniel Kloeser
+
+
 import numpy as np
 import casadi as ca
 from libs.utils.normalise_angle import normalise_angle
 import matplotlib.pyplot as plt
 from libs.vehicle_model.vehicle_model import VehicleParameters
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
+import scipy.linalg
 
 
 # params = VehicleParameters()
@@ -117,7 +154,7 @@ class MPCC:
         self.ocp = AcadosOcp()
         self.controller_cost(0, 0, 0)
 
-    def SystemModel(self, param):
+    def bicycle_model(self, param):
         """Compute the right-hand side of the ODEs
 
         Args:
@@ -134,6 +171,12 @@ class MPCC:
             :param states:
             :param param:
         """
+        # define structs
+        constraint = ca.types.SimpleNamespace()
+        model = ca.types.SimpleNamespace()
+
+        model_name = "bicycle_model"
+
         # parameters of the vehicle:
         m = param.m
         lf = param.a
@@ -162,22 +205,26 @@ class MPCC:
         vy = ca.SX.sym('vy')
         omega = ca.SX.sym('omega')
         state = ca.vertcat(x, y, yaw, vx, vy, omega)
+
         # system inputs
         tau = ca.SX.sym('tau')
         delta = ca.SX.sym('delta')
+        sym_u = ca.vertcat(tau, delta)
 
-        # unnamed symoblic variables
-        sym_x = ca.vertcat(x, y, yaw, vx, vy, omega)
-
+        # xdot
         x_dot = ca.SX.sym('x_dot')
         y_dot = ca.SX.sym('y_dot')
         yaw_dot = ca.SX.sym('yaw_dot')
         vx_dot = ca.SX.sym('vx_dot')
         vy_dot = ca.SX.sym('vy_dot')
         omega_dot = ca.SX.sym('omega_dot')
+        state_dot = ca.vertcat(x_dot, y_dot, yaw_dot, vx_dot, vy_dot, omega_dot)
 
-        sym_u = ca.vertcat(tau, delta)
-        x0 = np.zeros(self.nx)
+        # algebraic variables
+        z = ca.vertcat([])
+
+        # parameters
+        p = ca.vertcat([])
 
         ## Dynamics
         # Slip angles for the front and rear
@@ -200,83 +247,253 @@ class MPCC:
         domega = 1 / Izz * (Ffy * lf * np.cos(delta) - Fry * lr)
 
         expr_f_expl = ca.vertcat(dx, dy, dyaw, dvx, dvy, domega)
-        sym_xdot = ca.vertcat(x_dot, y_dot, yaw_dot, vx_dot, vy_dot, omega_dot)
-        expr_f_impl = expr_f_expl - sym_xdot
 
-        ## cost calculations
-        qc = 50000 * 1 / 0.5 ** 2  # lateral error cost
-        qyaw = 2000 * 1 / (1 * np.pi / 180) ** 2  # yaw error cost
-        qv = 10 * 1 / 1 ** 2
+        # Constraint on forces
+        a_long = dvx - vy * omega
+        a_lat = dvy + vx * omega
 
-        y_r = 0
-        yaw_r = 0
-        v_r = 15
+        # Model bounds
+        model.n_min = -5  # width of the track [m]
+        model.n_max = 5  # width of the track [m]
 
-        cost_expr_y = ca.vertcat(y, yaw, vx)
-        y_ref = np.array([y_r, yaw_r, v_r])
-        W = np.diag([qc, qyaw, qv])
-        cost_expr_y_e = ca.vertcat(y_r, yaw_r, v_r)
-        W_e = W
-        y_ref_e = y_ref
+        # State bounds
+        model.delta_min = -0.40
+        model.delta_max = +0.40
+        model.tau_min = -1000
+        model.tau_max = +1000
+        # input bounds
+        model.ddelta_min = -2.0  # minimum change rate of stering angle [rad/s]
+        model.ddelta_max = 2.0  # maximum change rate of steering angle [rad/s]
+        model.dtau_min = -100  # -10.0  # minimum torque change rate
+        model.dtau_max = 100  # 10.0  # maximum torque change rate
+        # nonlinear constraint
+        constraint.alat_min = -4  # maximum lateral force [m/s^2]
+        constraint.alat_max = 4  # maximum lateral force [m/s^1]
+        constraint.along_min = -4  # maximum lateral force [m/s^2]
+        constraint.along_max = 4  # maximum lateral force [m/s^2]
 
-        # Constraints
-        long_acc = dvx - vy * omega
-        lat_acc = dvy + vx * omega
-        constr_expr_h = ca.vertcat(long_acc, lat_acc)
-        bound_h = np.array([9.81, 9.81])
-        constr_Jsh = np.eye(2)
-        # cost_Z = np.eye(2)
-        # cost_z = np.zeros(2, 1)
+        # Define initial conditions
+        model.x0 = np.array([0, 0, 0, 0, 0, 0])
 
-        model = AcadosModel()
-        model.f_impl_expr = expr_f_impl
+        # define constraints struct
+        constraint.alat = ca.Function("a_lat", [state, sym_u], [a_lat])
+        constraint.expr = ca.vertcat(a_long, a_lat, delta)
+
+        # Define model struct
+        # params = ca.types.SimpleNamespace()
+
+        model.f_impl_expr = state_dot - expr_f_expl
         model.f_expl_expr = expr_f_expl
-        model.x = sym_x
-        model.xdot = sym_xdot
+        model.x = state
+        model.xdot = state_dot
         model.u = sym_u
-        model.name = 'bicycle_model'
+        model.z = z
+        model.p = p
+        model.name = model_name
+        # model.params = params
+        return model, constraint
 
-        self.ocp.model = model
+
+
+        # ## cost calculations
+        # qc = 50000 * 1 / 0.5 ** 2  # lateral error cost
+        # qyaw = 2000 * 1 / (1 * np.pi / 180) ** 2  # yaw error cost
+        # qv = 10 * 1 / 1 ** 2
+        #
+        # y_r = 0
+        # yaw_r = 0
+        # v_r = 15
+        #
+        # cost_expr_y = ca.vertcat(y, yaw, vx)
+        # y_ref = np.array([y_r, yaw_r, v_r])
+        # W = np.diag([qc, qyaw, qv])
+        # cost_expr_y_e = ca.vertcat(y_r, yaw_r, v_r)
+        # W_e = W
+        # y_ref_e = y_ref
+        #
+        # # Constraints
+        # long_acc = dvx - vy * omega
+        # lat_acc = dvy + vx * omega
+        # constr_expr_h = ca.vertcat(long_acc, lat_acc)
+        # bound_h = np.array([9.81, 9.81])
+        # constr_Jsh = np.eye(2)
+        # # cost_Z = np.eye(2)
+        # # cost_z = np.zeros(2, 1)
+        #
+        # model = AcadosModel()
+        # model.f_impl_expr = expr_f_impl
+        # model.f_expl_expr = expr_f_expl
+        # model.x = sym_x
+        # model.xdot = sym_xdot
+        # model.u = sym_u
+        # model.name = 'bicycle_model'
+        #
+        # self.ocp.model = model
+        # nx = model.x.size()[0]
+        # nu = model.u.size()[0]
+        # ny = nx + nu
+        # ny_e = nx
+        #
+        # self.ocp.dims.N = self.N
+        # # self.ocp.model.T = self.T
+        # # Cost
+        # self.ocp.cost.cost_type = 'NONLINEAR_LS'
+        # self.ocp.cost.cost_type_e = 'NONLINEAR_LS'
+        # self.ocp.cost.W = W
+        # self.ocp.cost.W_e = W_e
+        # self.ocp.cost.yref = y_ref
+        # self.ocp.cost.yref_e = y_ref_e
+        # self.ocp.model.cost_y_expr = cost_expr_y
+        # self.ocp.model.cost_y_expr_e = cost_expr_y_e
+        # # Constraints
+        # self.ocp.constraints.constr_type = 'BGH'
+        # # self.ocp.constraints.constr_expr_h = constr_expr_h
+        # # self.ocp.constraints.bound_h = bound_h
+        # # self.ocp.constraints.constr_Jsh = constr_Jsh
+        # # Solver options
+        # self.ocp.solver_options.nlp_solver_type = 'SQP'
+        # self.ocp.solver_options.qp_solver = 'FULL_CONDENSING_HPIPM'
+        # self.ocp.solver_options.qp_solver_cond_N = 5
+        # self.ocp.solver_options.integrator_type = 'ERK'
+        # self.ocp.solver_options.tf = self.T  # perdiction horizon
+        # ocp_solver = AcadosOcpSolver(self.ocp)
+        # status = ocp_solver.solve()
+        # print(status)
+
+    def acados_settings(self, Tf, N):
+        # create render arguments
+        ocp = AcadosOcp()
+
+        # export model
+        model, constraint = self.bicycle_model(self.params)
+
+        # define acados ODE
+        model_ac = AcadosModel()
+        model_ac.f_impl_expr = model.f_impl_expr
+        model_ac.f_expl_expr = model.f_expl_expr
+        model_ac.x = model.x
+        model_ac.xdot = model.xdot
+        model_ac.u = model.u
+        model_ac.z = model.z
+        model_ac.p = model.p
+        model_ac.name = model.name
+        ocp.model = model_ac
+
+        # define constraint
+        model_ac.con_h_expr = constraint.expr
+
+        # dimensions
         nx = model.x.size()[0]
         nu = model.u.size()[0]
         ny = nx + nu
         ny_e = nx
 
-        self.ocp.dims.N = self.N
-        # self.ocp.model.T = self.T
-        # Cost
-        self.ocp.cost.cost_type = 'NONLINEAR_LS'
-        self.ocp.cost.cost_type_e = 'NONLINEAR_LS'
-        self.ocp.cost.W = W
-        self.ocp.cost.W_e = W_e
-        self.ocp.cost.yref = y_ref
-        self.ocp.cost.yref_e = y_ref_e
-        self.ocp.model.cost_y_expr = cost_expr_y
-        self.ocp.model.cost_y_expr_e = cost_expr_y_e
-        # Constraints
-        self.ocp.constraints.constr_type = 'BGH'
-        # self.ocp.constraints.constr_expr_h = constr_expr_h
-        # self.ocp.constraints.bound_h = bound_h
-        # self.ocp.constraints.constr_Jsh = constr_Jsh
-        # Solver options
-        self.ocp.solver_options.nlp_solver_type = 'SQP'
-        self.ocp.solver_options.qp_solver = 'FULL_CONDENSING_HPIPM'
-        self.ocp.solver_options.qp_solver_cond_N = 5
-        self.ocp.solver_options.integrator_type = 'ERK'
-        self.ocp.solver_options.tf = self.T # perdiction horizon
-        ocp_solver = AcadosOcpSolver(self.ocp)
-        status = ocp_solver.solve()
-        print(status)
+        nsbx = 1
+        nh = constraint.expr.shape[0]
+        nsh = nh
+        ns = nsh + nsbx
 
-        return ocp_solver, status
+        # discretization
+        ocp.dims.N = N
 
-    def acados_settings(self, Tf, N, track_file):
+        # set cost
+        Q = np.diag([1e-1, 1e-8, 1e-8, 1e-8, 1e-3, 5e-3])
 
+        R = np.eye(nu)
+        R[0, 0] = 1e-3
+        R[1, 1] = 5e-3
+
+        Qe = np.diag([5e0, 1e1, 1e-8, 1e-8, 5e-3, 2e-3])
+
+        ocp.cost.cost_type = "LINEAR_LS"
+        ocp.cost.cost_type_e = "LINEAR_LS"
+        unscale = N / Tf
+
+        ocp.cost.W = unscale * scipy.linalg.block_diag(Q, R)
+        ocp.cost.W_e = Qe / unscale
+
+        Vx = np.zeros((ny, nx))
+        Vx[:nx, :nx] = np.eye(nx)
+        ocp.cost.Vx = Vx
+
+        Vu = np.zeros((ny, nu))
+        Vu[6, 0] = 1.0
+        Vu[7, 1] = 1.0
+        ocp.cost.Vu = Vu
+
+        Vx_e = np.zeros((ny_e, nx))
+        Vx_e[:nx, :nx] = np.eye(nx)
+        ocp.cost.Vx_e = Vx_e
+
+        ocp.cost.zl = 100 * np.ones((ns,))
+        ocp.cost.zu = 100 * np.ones((ns,))
+        ocp.cost.Zl = 1 * np.ones((ns,))
+        ocp.cost.Zu = 1 * np.ones((ns,))
+
+        # set intial references
+        ocp.cost.yref = np.array([0, 0, 0, 0, 0, 0, 0, 0])
+        ocp.cost.yref_e = np.array([0, 0, 0, 0, 0, 0])
+
+        # setting constraints
+        ocp.constraints.lbx = np.array([-12])
+        ocp.constraints.ubx = np.array([12])
+        ocp.constraints.idxbx = np.array([1])
+        ocp.constraints.lbu = np.array([model.dtau_min, model.ddelta_min])
+        ocp.constraints.ubu = np.array([model.dtau_max, model.ddelta_max])
+        ocp.constraints.idxbu = np.array([0, 1])
+
+        ocp.constraints.lsbx = np.zeros([nsbx])
+        ocp.constraints.usbx = np.zeros([nsbx])
+        ocp.constraints.idxsbx = np.array(range(nsbx))
+
+        ocp.constraints.lh = np.array(
+            [
+                constraint.along_min,
+                constraint.alat_min,
+                model.n_min,
+                model.throttle_min,
+                model.delta_min,
+            ]
+        )
+        ocp.constraints.uh = np.array(
+            [
+                constraint.along_max,
+                constraint.alat_max,
+                model.n_max,
+                model.throttle_max,
+                model.delta_max,
+            ]
+        )
+        ocp.constraints.lsh = np.zeros(nsh)
+        ocp.constraints.ush = np.zeros(nsh)
+        ocp.constraints.idxsh = np.array(range(nsh))
+
+        # set intial condition
+        ocp.constraints.x0 = model.x0
+
+        # set QP solver and integration
+        ocp.solver_options.tf = Tf
+        # ocp.solver_options.qp_solver = 'FULL_CONDENSING_QPOASES'
+        ocp.solver_options.qp_solver = "PARTIAL_CONDENSING_HPIPM"
+        ocp.solver_options.nlp_solver_type = "SQP"
+        ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
+        ocp.solver_options.integrator_type = "ERK"
+        ocp.solver_options.sim_method_num_stages = 4
+        ocp.solver_options.sim_method_num_steps = 3
+        # ocp.solver_options.nlp_solver_step_length = 0.05
+        ocp.solver_options.nlp_solver_max_iter = 200
+        ocp.solver_options.tol = 1e-4
+        # ocp.solver_options.nlp_solver_tol_comp = 1e-1
+
+        # create solver
+        acados_solver = AcadosOcpSolver(ocp, json_file="acados_ocp.json")
+
+        return constraint, model, acados_solver
 
     def controller_cost(self, x, y, yaw):
         ocp_solver, status = self.SystemModel(self.params)
 
-        simX0 = np.ndarray((self.N+1, 6))
+        simX0 = np.ndarray((self.N + 1, 6))
         simU0 = np.ndarray((self.N, 2))
         # get solution
         for i in range(self.N):

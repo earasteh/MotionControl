@@ -418,6 +418,8 @@ class VehicleModel:
 
         axc = U_dot - V * wz
         ayc = V_dot + U * wz
+
+        # global frame ax and ay
         ax = axc * cos(yaw) - ayc * sin(yaw)
         ay = axc * sin(yaw) + ayc * cos(yaw)
 
