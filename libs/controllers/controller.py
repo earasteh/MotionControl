@@ -140,7 +140,7 @@ class StanleyController:
         return self._waypoints
 
 
-class MPCC:
+class MPC:
     def __init__(self, N, T, param, px, py, pyaw):
         self.N = N  # dt = T/N
         self.T = T  # Total time
@@ -293,73 +293,6 @@ class MPCC:
         # model.params = params
         return model, constraint
 
-
-
-        # ## cost calculations
-        # qc = 50000 * 1 / 0.5 ** 2  # lateral error cost
-        # qyaw = 2000 * 1 / (1 * np.pi / 180) ** 2  # yaw error cost
-        # qv = 10 * 1 / 1 ** 2
-        #
-        # y_r = 0
-        # yaw_r = 0
-        # v_r = 15
-        #
-        # cost_expr_y = ca.vertcat(y, yaw, vx)
-        # y_ref = np.array([y_r, yaw_r, v_r])
-        # W = np.diag([qc, qyaw, qv])
-        # cost_expr_y_e = ca.vertcat(y_r, yaw_r, v_r)
-        # W_e = W
-        # y_ref_e = y_ref
-        #
-        # # Constraints
-        # long_acc = dvx - vy * omega
-        # lat_acc = dvy + vx * omega
-        # constr_expr_h = ca.vertcat(long_acc, lat_acc)
-        # bound_h = np.array([9.81, 9.81])
-        # constr_Jsh = np.eye(2)
-        # # cost_Z = np.eye(2)
-        # # cost_z = np.zeros(2, 1)
-        #
-        # model = AcadosModel()
-        # model.f_impl_expr = expr_f_impl
-        # model.f_expl_expr = expr_f_expl
-        # model.x = sym_x
-        # model.xdot = sym_xdot
-        # model.u = sym_u
-        # model.name = 'bicycle_model'
-        #
-        # self.ocp.model = model
-        # nx = model.x.size()[0]
-        # nu = model.u.size()[0]
-        # ny = nx + nu
-        # ny_e = nx
-        #
-        # self.ocp.dims.N = self.N
-        # # self.ocp.model.T = self.T
-        # # Cost
-        # self.ocp.cost.cost_type = 'NONLINEAR_LS'
-        # self.ocp.cost.cost_type_e = 'NONLINEAR_LS'
-        # self.ocp.cost.W = W
-        # self.ocp.cost.W_e = W_e
-        # self.ocp.cost.yref = y_ref
-        # self.ocp.cost.yref_e = y_ref_e
-        # self.ocp.model.cost_y_expr = cost_expr_y
-        # self.ocp.model.cost_y_expr_e = cost_expr_y_e
-        # # Constraints
-        # self.ocp.constraints.constr_type = 'BGH'
-        # # self.ocp.constraints.constr_expr_h = constr_expr_h
-        # # self.ocp.constraints.bound_h = bound_h
-        # # self.ocp.constraints.constr_Jsh = constr_Jsh
-        # # Solver options
-        # self.ocp.solver_options.nlp_solver_type = 'SQP'
-        # self.ocp.solver_options.qp_solver = 'FULL_CONDENSING_HPIPM'
-        # self.ocp.solver_options.qp_solver_cond_N = 5
-        # self.ocp.solver_options.integrator_type = 'ERK'
-        # self.ocp.solver_options.tf = self.T  # perdiction horizon
-        # ocp_solver = AcadosOcpSolver(self.ocp)
-        # status = ocp_solver.solve()
-        # print(status)
-
     def acados_settings(self, Tf, N):
         # create render arguments
         ocp = AcadosOcp()
@@ -490,17 +423,22 @@ class MPCC:
 
         return constraint, model, acados_solver
 
-    def controller_cost(self, x, y, yaw):
-        ocp_solver, status = self.SystemModel(self.params)
+    def controller_cost(self, x, y, yaw, ):
+        constraint, model, acados_solver = self.acados_settings(self.T, self.N)
 
         simX0 = np.ndarray((self.N + 1, 6))
         simU0 = np.ndarray((self.N, 2))
         # get solution
         for i in range(self.N):
-            simX0[i, :] = ocp_solver.get(i, "x")
-            simU0[i, :] = ocp_solver.get(i, "u")
 
-        simX0[self.N, :] = ocp_solver.get(self.N, "x")
+            for j in range(self.N):
+                yref = np.array([y_ref,0,0,0,0,0,0])
+                acados_solver.set(j, "yref", yref)
+
+            simX0[i, :] = acados_solver.get(i, "x")
+            simU0[i, :] = acados_solver.get(i, "u")
+
+        simX0[self.N, :] = acados_solver.get(self.N, "x")
         ocp_solver.print_statistics()
 
         solver = 0

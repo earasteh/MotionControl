@@ -2,7 +2,7 @@ import os
 import numpy as np
 from libs.vehicle_model.vehicle_model import VehicleModel
 from libs.vehicle_model.vehicle_model import VehicleParameters
-from libs.controllers.controller import StanleyController, MPCC
+from libs.controllers.controller import StanleyController, MPC
 from libs.controllers.controller import LongitudinalController
 from libs.utils.env import world
 
@@ -81,7 +81,7 @@ class Car:
                                                  self.wheelbase, param, waypoints=[px, py, pyaw])
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
         self.long_tracker = LongitudinalController(self.k_v, self.k_i, self.k_d)
-        self.MPC = MPCC(5, 0.001, param, self.px, self.py, self.pyaw)
+        self.MPC = MPC(5, 0.001, param, self.px, self.py, self.pyaw)
         self.uk_prev_step = np.array([0, -1 * np.pi / 180])
 
     def drive(self, frame):
