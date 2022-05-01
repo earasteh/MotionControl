@@ -248,7 +248,7 @@ class MPC:
 
         expr_f_expl = ca.vertcat(dx, dy, dyaw, dvx, dvy, domega)
 
-        # Constraint on forces
+        # Constraint on acceleration
         a_long = dvx - vy * omega
         a_lat = dvy + vx * omega
 
@@ -365,7 +365,7 @@ class MPC:
 
         # set intial references
         ocp.cost.yref = np.array([0, 0, 0, 0, 0, 0, 0, 0])
-        ocp.cost.yref_e = np.array([0, 0, 0, 0, 0, 0])
+        ocp.cost.yref_e = np.array([0, 0, 0, 0, 0, 0, 0, 0])
 
         # setting constraints
         ocp.constraints.lbx = np.array([-12])
@@ -383,8 +383,6 @@ class MPC:
             [
                 constraint.along_min,
                 constraint.alat_min,
-                model.n_min,
-                model.throttle_min,
                 model.delta_min,
             ]
         )
@@ -392,8 +390,6 @@ class MPC:
             [
                 constraint.along_max,
                 constraint.alat_max,
-                model.n_max,
-                model.throttle_max,
                 model.delta_max,
             ]
         )
@@ -423,23 +419,25 @@ class MPC:
 
         return constraint, model, acados_solver
 
-    def controller_cost(self, x, y, yaw, ):
+    def controller_cost(self, x, y, yaw):
         constraint, model, acados_solver = self.acados_settings(self.T, self.N)
-
+        target_index, _, _, _, d = StanleyController.find_target_path_id(self.px, self.py, x, y, yaw, self.params)
         simX0 = np.ndarray((self.N + 1, 6))
         simU0 = np.ndarray((self.N, 2))
+        local_px = self.px[target_index:target_index+self.N]
+        local_py = self.py[target_index:target_index+self.N]
+
         # get solution
         for i in range(self.N):
-
             for j in range(self.N):
-                yref = np.array([y_ref,0,0,0,0,0,0])
+                yref = np.array([local_py[j], 0, 0, 0, 0, 0, 0, 0])
                 acados_solver.set(j, "yref", yref)
 
             simX0[i, :] = acados_solver.get(i, "x")
             simU0[i, :] = acados_solver.get(i, "u")
 
         simX0[self.N, :] = acados_solver.get(self.N, "x")
-        ocp_solver.print_statistics()
+        acados_solver.print_statistics()
 
         solver = 0
         zlb = 0
