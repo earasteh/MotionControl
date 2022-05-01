@@ -97,12 +97,12 @@ class Car:
                 # self.prev_vel = self.v
                 # self.MPC.controller()
                 ds = self.ps[11] - self.ps[10]
-                out = self.MPC.solve_mpc([self.x, self.y, self.yaw, self.v, self.state[1], self.state_dot[7],
-                                                  ds], self.uk_prev_step)
+                out = self.MPC.solve_mpc([self.x, self.y, self.yaw, self.v, self.state[1], self.state_dot[7]],
+                                         self.uk_prev_step)
                 self.uk_prev_step = out.reshape((2,))
                 tau, delta = out.tolist()
-                self.delta = delta[0]
-                self.torque_vec = [tau[0]] * 4
+                self.delta = delta
+                self.torque_vec = [tau] * 4
                 # print(f'Solver status: {status} \n')
                 print(f'delta: {self.delta * 180 / np.pi} \n')
                 print(f'tau: {self.torque_vec[0]} \n')

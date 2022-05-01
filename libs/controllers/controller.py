@@ -365,7 +365,7 @@ class MPC:
 
         # set intial references
         ocp.cost.yref = np.array([0, 0, 0, 0, 0, 0, 0, 0])
-        ocp.cost.yref_e = np.array([0, 0, 0, 0, 0, 0, 0, 0])
+        ocp.cost.yref_e = np.array([0, 0, 0, 0, 0, 0])
 
         # setting constraints
         ocp.constraints.lbx = np.array([-12])
@@ -437,7 +437,7 @@ class MPC:
             simU0[i, :] = acados_solver.get(i, "u")
 
         simX0[self.N, :] = acados_solver.get(self.N, "x")
-        acados_solver.print_statistics()
+        # acados_solver.print_statistics()
 
         solver = 0
         zlb = 0
@@ -462,9 +462,9 @@ class MPC:
             :param current_state:
         """
         #     # unpacking the real signals that come from the system
-        x_r, y_r, yaw_r, vx_r, vy_r, omega_r, ps = current_state
+        x_r, y_r, yaw_r, vx_r, vy_r, omega_r = current_state
 
-        simU0, zlb, zub, cost_u, Jy, Jyaw, cost_v = self.controller_cost(x_r, y_r, yaw_r)
+        simU0, solver, zlb, zub, cost_u, Jy, Jyaw, cost_v = self.controller_cost(x_r, y_r, yaw_r)
 
         return np.array(simU0[0, :])
 
