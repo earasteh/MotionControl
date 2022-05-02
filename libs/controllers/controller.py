@@ -148,11 +148,17 @@ class MPC:
         self.px = px
         self.py = py
         self.pyaw = pyaw
-        # casadi setup
-        self.nx = 6
-        self.nu = 2
-        self.ocp = AcadosOcp()
-        self.controller_cost(0, 0, 0)
+        # acados setup
+        self.constraint, self.model, self.acados_solver = self.acados_settings(self.T, self.N)
+        # dimensions
+        self.nx = self.model.x.size()[0]
+        self.nu = self.model.u.size()[0]
+        self.ny = self.nx + self.nu
+        Tfinal = 1
+        Nsim = int(Tfinal * self.N / self.T)
+        # initialize data structs
+        self.SimX = np.ndarray((Nsim, self.nx))
+        self.SimU = np.ndarray((Nsim, self.nu))
 
     def bicycle_model(self, param):
         """Compute the right-hand side of the ODEs
@@ -419,36 +425,6 @@ class MPC:
 
         return constraint, model, acados_solver
 
-    def controller_cost(self, x, y, yaw):
-        constraint, model, acados_solver = self.acados_settings(self.T, self.N)
-        target_index, _, _, _, d = StanleyController.find_target_path_id(self.px, self.py, x, y, yaw, self.params)
-        simX0 = np.ndarray((self.N + 1, 6))
-        simU0 = np.ndarray((self.N, 2))
-        local_px = self.px[target_index:target_index+self.N]
-        local_py = self.py[target_index:target_index+self.N]
-
-        # get solution
-        for i in range(self.N):
-            for j in range(self.N):
-                yref = np.array([local_py[j], 0, 0, 0, 0, 0, 0, 0])
-                acados_solver.set(j, "yref", yref)
-
-            simX0[i, :] = acados_solver.get(i, "x")
-            simU0[i, :] = acados_solver.get(i, "u")
-
-        simX0[self.N, :] = acados_solver.get(self.N, "x")
-        # acados_solver.print_statistics()
-
-        solver = 0
-        zlb = 0
-        zub = 0
-        cost_u = 0
-        Jy = 0
-        Jyaw = 0
-        cost_v = 0
-
-        return [simU0, solver, zlb, zub, cost_u, Jy, Jyaw, cost_v]
-
     def solve_mpc(self, current_state, uk_prev_step):
         """Solve MPC provided the current state, i.e., this
         function is u = h(x), which is the implicit control law of MPC.
@@ -464,9 +440,42 @@ class MPC:
         #     # unpacking the real signals that come from the system
         x_r, y_r, yaw_r, vx_r, vy_r, omega_r = current_state
 
-        simU0, solver, zlb, zub, cost_u, Jy, Jyaw, cost_v = self.controller_cost(x_r, y_r, yaw_r)
+        for i in range(self.N):
+            target_index, _, _, _, d = StanleyController.find_target_path_id(self.px, self.py, x_r, y_r, yaw_r, self.params)
+            local_px = self.px[target_index]
+            local_py = self.py[target_index]
 
-        return np.array(simU0[0, :])
+            for j in range(self.N):
+                yref = np.array([local_py, 0, 0, 0, 0, 0, 0, 0])
+                self.acados_solver.set(j, "yref", yref)
+
+            status = self.acados_solver.solve()
+            print("acados returned status {}.".format(status))
+
+            # get solution
+            x0 = self.acados_solver.get(0, "x")
+            u0 = self.acados_solver.get(0, "u")
+
+            print('u0 is {}'.format(u0))
+
+            for j in range(6):
+                self.SimX[0, j] = x0[j]
+            for j in range(2):
+                self.SimU[0, j] = u0[j]
+            # update initial condition
+            x0 = self.acados_solver.get(1, "x")
+            self.acados_solver.set(0, "lbx", x0)
+            self.acados_solver.set(0, "ubx", x0)
+
+        solver = 0
+        zlb = 0
+        zub = 0
+        cost_u = 0
+        Jy = 0
+        Jyaw = 0
+        cost_v = 0
+
+        return np.array(self.SimU[0, :])
 
 
 class LongitudinalController:
