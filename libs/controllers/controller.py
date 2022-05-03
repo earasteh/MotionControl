@@ -441,13 +441,16 @@ class MPC:
         x_r, y_r, yaw_r, vx_r, vy_r, omega_r = current_state
 
         for i in range(self.N):
-            target_index, _, _, _, d = StanleyController.find_target_path_id(self.px, self.py, x_r, y_r, yaw_r, self.params)
-            local_px = self.px[target_index]
+            target_index, _, _, _, _ = StanleyController.find_target_path_id(self.px, self.py, x_r, y_r, yaw_r, self.params)
+            # local_px = self.px[target_index]
             local_py = self.py[target_index]
 
-            for j in range(self.N):
-                yref = np.array([local_py, 0, 0, 0, 0, 0, 0, 0])
-                self.acados_solver.set(j, "yref", yref)
+            yref = np.array([local_py, 0, 0, 0, 0, 0, 0, 0])
+            self.acados_solver.set(i, "yref", yref)
+
+            # for j in range(self.N):
+            #     yref = np.array([local_py, 0, 0, 0, 0, 0, 0, 0])
+            #     self.acados_solver.set(j, "yref", yref)
 
             status = self.acados_solver.solve()
             print("acados returned status {}.".format(status))
@@ -459,13 +462,13 @@ class MPC:
             print('u0 is {}'.format(u0))
 
             for j in range(6):
-                self.SimX[0, j] = x0[j]
+                self.SimX[i, j] = x0[j]
             for j in range(2):
-                self.SimU[0, j] = u0[j]
+                self.SimU[i, j] = u0[j]
             # update initial condition
-            x0 = self.acados_solver.get(1, "x")
-            self.acados_solver.set(0, "lbx", x0)
-            self.acados_solver.set(0, "ubx", x0)
+        x0 = self.acados_solver.get(1, "x")
+        self.acados_solver.set(0, "lbx", x0)
+        self.acados_solver.set(0, "ubx", x0)
 
         solver = 0
         zlb = 0

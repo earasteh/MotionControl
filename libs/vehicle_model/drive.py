@@ -96,7 +96,6 @@ class Car:
                 #                                    self.total_vel_error, self.dt)
                 # self.prev_vel = self.v
                 # self.MPC.controller()
-                ds = self.ps[11] - self.ps[10]
                 out = self.MPC.solve_mpc([self.x, self.y, self.yaw, self.v, self.state[1], self.state_dot[7]],
                                          self.uk_prev_step)
                 self.uk_prev_step = out.reshape((2,))
@@ -116,7 +115,7 @@ class Car:
             self.state, self.x, self.y, self.yaw, self.v, self.state_dot, outputs, self.ax_prev, self.ay_prev = \
                 self.kbm.planar_model_RK4(self.state, self.torque_vec, [1.0, 1.0, 1.0, 1.0],
                                           [self.delta, self.delta, 0, 0], param, self.ax_prev, self.ay_prev)
-
+            print(self.state[0])
             self.DataLog[frame * Veh_SIM_NUM + i, 0] = (frame * Veh_SIM_NUM + i) * self.kbm.dt
             self.DataLog[frame * Veh_SIM_NUM + i, 1:11] = self.state
             self.DataLog[frame * Veh_SIM_NUM + i, 11:21] = self.state_dot
