@@ -141,13 +141,14 @@ class StanleyController:
 
 
 class MPC:
-    def __init__(self, N, T, param, px, py, pyaw):
+    def __init__(self, N, T, param, px, py, pyaw, veh_initial_conditions):
         self.N = N  # dt = T/N
         self.T = T  # Total time
         self.params = param  # system parameters
         self.px = px
         self.py = py
         self.pyaw = pyaw
+        self.initial_conditions = veh_initial_conditions
         # acados setup
         self.constraint, self.model, self.acados_solver = self.acados_settings(self.T, self.N)
         # dimensions
@@ -160,7 +161,7 @@ class MPC:
         self.SimX = np.ndarray((Nsim, self.nx))
         self.SimU = np.ndarray((Nsim, self.nu))
 
-    def bicycle_model(self, param):
+    def bicycle_model(self, initial_condition, param):
         """Compute the right-hand side of the ODEs
 
         Args:
@@ -210,12 +211,16 @@ class MPC:
         vx = ca.SX.sym('vx')
         vy = ca.SX.sym('vy')
         omega = ca.SX.sym('omega')
-        state = ca.vertcat(x, y, yaw, vx, vy, omega)
-
-        # system inputs
+        # u
         tau = ca.SX.sym('tau')
         delta = ca.SX.sym('delta')
-        sym_u = ca.vertcat(tau, delta)
+
+        state = ca.vertcat(x, y, yaw, vx, vy, omega, tau, delta)
+
+        # system inputs (Delta U)
+        Dtau = ca.SX.sym('Dtau')
+        Ddelta = ca.SX.sym('Ddelta')
+        sym_u = ca.vertcat(Dtau, Ddelta)
 
         # xdot
         x_dot = ca.SX.sym('x_dot')
@@ -224,7 +229,9 @@ class MPC:
         vx_dot = ca.SX.sym('vx_dot')
         vy_dot = ca.SX.sym('vy_dot')
         omega_dot = ca.SX.sym('omega_dot')
-        state_dot = ca.vertcat(x_dot, y_dot, yaw_dot, vx_dot, vy_dot, omega_dot)
+        tau_dot = ca.SX.sym('tau_dot')
+        delta_dot = ca.SX.sym('delta_dot')
+        state_dot = ca.vertcat(x_dot, y_dot, yaw_dot, vx_dot, vy_dot, omega_dot, tau_dot, delta_dot)
 
         # algebraic variables
         z = ca.vertcat([])
@@ -252,7 +259,7 @@ class MPC:
         dvy = 1 / m * (Fry - Ffy * np.cos(delta) - m * vx * omega)
         domega = 1 / Izz * (Ffy * lf * np.cos(delta) - Fry * lr)
 
-        expr_f_expl = ca.vertcat(dx, dy, dyaw, dvx, dvy, domega)
+        expr_f_expl = ca.vertcat(dx, dy, dyaw, dvx, dvy, domega, Dtau, Ddelta)
 
         # Constraint on acceleration
         a_long = dvx - vy * omega
@@ -263,13 +270,13 @@ class MPC:
         model.n_max = 5  # width of the track [m]
 
         # State bounds
-        model.delta_min = -0.40
-        model.delta_max = +0.40
+        model.delta_min = -30.0 * np.pi / 180
+        model.delta_max = +30.0 * np.pi / 180
         model.tau_min = -1000
         model.tau_max = +1000
         # input bounds
-        model.ddelta_min = -2.0  # minimum change rate of stering angle [rad/s]
-        model.ddelta_max = 2.0  # maximum change rate of steering angle [rad/s]
+        model.ddelta_min = -2 * np.pi / 180  # minimum change rate of stering angle [rad/s]
+        model.ddelta_max = 2 * np.pi / 180  # maximum change rate of steering angle [rad/s]
         model.dtau_min = -100  # -10.0  # minimum torque change rate
         model.dtau_max = 100  # 10.0  # maximum torque change rate
         # nonlinear constraint
@@ -279,8 +286,8 @@ class MPC:
         constraint.along_max = 4  # maximum lateral force [m/s^2]
 
         # Define initial conditions
-        model.x0 = np.array([0, 0, 0, 0, 0, 0])
-
+        # model.x0 = np.array([0, 0, 0, 0, 0, 0])
+        model.x0 = initial_condition
         # define constraints struct
         constraint.alat = ca.Function("a_lat", [state, sym_u], [a_lat])
         constraint.expr = ca.vertcat(a_long, a_lat, delta)
@@ -304,7 +311,7 @@ class MPC:
         ocp = AcadosOcp()
 
         # export model
-        model, constraint = self.bicycle_model(self.params)
+        model, constraint = self.bicycle_model(self.initial_conditions, self.params)
 
         # define acados ODE
         model_ac = AcadosModel()
@@ -329,6 +336,7 @@ class MPC:
 
         nsbx = 1
         nh = constraint.expr.shape[0]
+        # nh = 0
         nsh = nh
         ns = nsh + nsbx
 
@@ -336,13 +344,17 @@ class MPC:
         ocp.dims.N = N
 
         # set cost
-        Q = np.diag([1e-1, 1e-8, 1e-8, 1e-8, 1e-3, 5e-3])
+        # Q = np.diag([1e-1, 1e-8, 1e-8, 1e-8, 1e-3, 5e-3])
+        Q = np.diag([0, 200000.0, 6572274.74, 10, 0, 0, 0, 0])
 
         R = np.eye(nu)
         R[0, 0] = 1e-3
         R[1, 1] = 5e-3
+        # R[0, 0] = 0
+        # R[1, 1] = 0
 
-        Qe = np.diag([5e0, 1e1, 1e-8, 1e-8, 5e-3, 2e-3])
+        # Qe = np.diag([5e0, 1e1, 1e-8, 1e-8, 5e-3, 2e-3])
+        Qe = np.diag([0, 200000.0, 6572274.74, 10, 0, 0, 0, 0])
 
         ocp.cost.cost_type = "LINEAR_LS"
         ocp.cost.cost_type_e = "LINEAR_LS"
@@ -352,26 +364,29 @@ class MPC:
         ocp.cost.W_e = Qe / unscale
 
         Vx = np.zeros((ny, nx))
-        Vx[:nx, :nx] = np.eye(nx)
+        # Vx[:nx, :nx] = np.eye(nx)
+        Vx[1, 1] = 1 #y
+        Vx[2, 2] = 1 #yaw
+        Vx[3, 3] = 1 #vx
         ocp.cost.Vx = Vx
 
         Vu = np.zeros((ny, nu))
-        Vu[6, 0] = 1.0
-        Vu[7, 1] = 1.0
+        # Vu[6, 0] = 1.0
+        # Vu[7, 1] = 1.0
         ocp.cost.Vu = Vu
 
         Vx_e = np.zeros((ny_e, nx))
         Vx_e[:nx, :nx] = np.eye(nx)
         ocp.cost.Vx_e = Vx_e
 
-        ocp.cost.zl = 100 * np.ones((ns,))
-        ocp.cost.zu = 100 * np.ones((ns,))
-        ocp.cost.Zl = 1 * np.ones((ns,))
-        ocp.cost.Zu = 1 * np.ones((ns,))
+        # ocp.cost.zl = 100 * np.ones((ns,))
+        # ocp.cost.zu = 100 * np.ones((ns,))
+        # ocp.cost.Zl = 1 * np.ones((ns,))
+        # ocp.cost.Zu = 1 * np.ones((ns,))
 
         # set intial references
-        ocp.cost.yref = np.array([0, 0, 0, 0, 0, 0, 0, 0])
-        ocp.cost.yref_e = np.array([0, 0, 0, 0, 0, 0])
+        ocp.cost.yref = np.array([0, 0, 0, 10, 0, 0, 0, 0, 0, 0])
+        ocp.cost.yref_e = np.array([0, 0, 0, 10, 0, 0, 0, 0])
 
         # setting constraints
         ocp.constraints.lbx = np.array([-12])
@@ -381,9 +396,10 @@ class MPC:
         ocp.constraints.ubu = np.array([model.dtau_max, model.ddelta_max])
         ocp.constraints.idxbu = np.array([0, 1])
 
-        ocp.constraints.lsbx = np.zeros([nsbx])
-        ocp.constraints.usbx = np.zeros([nsbx])
-        ocp.constraints.idxsbx = np.array(range(nsbx))
+        # Slack variables for state constraints
+        # ocp.constraints.lsbx = np.zeros([nsbx])
+        # ocp.constraints.usbx = np.zeros([nsbx])
+        # ocp.constraints.idxsbx = np.array(range(nsbx))
 
         ocp.constraints.lh = np.array(
             [
@@ -399,9 +415,11 @@ class MPC:
                 model.delta_max,
             ]
         )
-        ocp.constraints.lsh = np.zeros(nsh)
-        ocp.constraints.ush = np.zeros(nsh)
-        ocp.constraints.idxsh = np.array(range(nsh))
+
+        # Slack variables for along, alat, delta_max
+        # ocp.constraints.lsh = np.zeros(nsh)
+        # ocp.constraints.ush = np.zeros(nsh)
+        # ocp.constraints.idxsh = np.array(range(nsh))
 
         # set intial condition
         ocp.constraints.x0 = model.x0
@@ -415,7 +433,6 @@ class MPC:
         ocp.solver_options.integrator_type = "ERK"
         ocp.solver_options.sim_method_num_stages = 4
         ocp.solver_options.sim_method_num_steps = 3
-        # ocp.solver_options.nlp_solver_step_length = 0.05
         ocp.solver_options.nlp_solver_max_iter = 200
         ocp.solver_options.tol = 1e-4
         # ocp.solver_options.nlp_solver_tol_comp = 1e-1
@@ -439,46 +456,48 @@ class MPC:
         """
         #     # unpacking the real signals that come from the system
         x_r, y_r, yaw_r, vx_r, vy_r, omega_r = current_state
+        target_index, _, _, _, _ = StanleyController.find_target_path_id(self.px, self.py, x_r, y_r, yaw_r, self.params)
+        local_px = self.px[target_index]
+        local_py = self.py[target_index]
+        local_yaw = self.pyaw[target_index]
+
+        Q = np.diag([0, 200000.0, 6572274.74, 10, 0, 0, 0, 0])
+        R = np.eye(2)
+        R[0, 0] = 1e-3
+        R[1, 1] = 5e-3
+        W = scipy.linalg.block_diag(Q, R)
+        W_e = Q
 
         for i in range(self.N):
-            target_index, _, _, _, _ = StanleyController.find_target_path_id(self.px, self.py, x_r, y_r, yaw_r, self.params)
-            # local_px = self.px[target_index]
-            local_py = self.py[target_index]
-
-            yref = np.array([local_py, 0, 0, 0, 0, 0, 0, 0])
+            self.acados_solver.cost_set(i, 'W', W)
+            yref = np.array([0, local_py, local_yaw, 10.0, 0, 0, 0, 0, 0, 0])
             self.acados_solver.set(i, "yref", yref)
+        self.acados_solver.cost_set(self.N, 'W', W_e)
+        yref_N = np.array([0, local_py, local_yaw, 10.0, 0, 0, 0, 0])
+        self.acados_solver.set(self.N, "yref", yref_N)
 
-            # for j in range(self.N):
-            #     yref = np.array([local_py, 0, 0, 0, 0, 0, 0, 0])
-            #     self.acados_solver.set(j, "yref", yref)
+        # set options
+        self.acados_solver.options_set('print_level', 0)
+        status = self.acados_solver.solve()
 
-            status = self.acados_solver.solve()
+        # get solution
+        x0 = self.acados_solver.get(0, "x")
+        u0 = self.acados_solver.get(0, "u")
+
+        if status != 0:
             print("acados returned status {}.".format(status))
 
-            # get solution
-            x0 = self.acados_solver.get(0, "x")
-            u0 = self.acados_solver.get(0, "u")
+        # print("cost is {}".format(self.acados_solver.get_cost()))
+        # print("u0 is {}".format(u0))
+        # print("X0 is {}".format(x0))
+        # print("xN is {}".format(self.acados_solver.get(self.N, "x")))
 
-            print('u0 is {}'.format(u0))
-
-            for j in range(6):
-                self.SimX[i, j] = x0[j]
-            for j in range(2):
-                self.SimU[i, j] = u0[j]
-            # update initial condition
         x0 = self.acados_solver.get(1, "x")
+        # update initial condition
         self.acados_solver.set(0, "lbx", x0)
         self.acados_solver.set(0, "ubx", x0)
 
-        solver = 0
-        zlb = 0
-        zub = 0
-        cost_u = 0
-        Jy = 0
-        Jyaw = 0
-        cost_v = 0
-
-        return np.array(self.SimU[0, :])
+        return np.array(u0)
 
 
 class LongitudinalController:

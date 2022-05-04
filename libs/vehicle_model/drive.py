@@ -81,7 +81,8 @@ class Car:
                                                  self.wheelbase, param, waypoints=[px, py, pyaw])
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
         self.long_tracker = LongitudinalController(self.k_v, self.k_i, self.k_d)
-        self.MPC = MPC(5, 0.001, param, self.px, self.py, self.pyaw)
+        self.MPC = MPC(5, 0.001, param, self.px, self.py, self.pyaw, np.array([init_x, init_y, init_yaw,
+                                                                               init_vel, 0, 0, 0, 0]))
         self.uk_prev_step = np.array([0, -1 * np.pi / 180])
 
     def drive(self, frame):
@@ -115,7 +116,6 @@ class Car:
             self.state, self.x, self.y, self.yaw, self.v, self.state_dot, outputs, self.ax_prev, self.ay_prev = \
                 self.kbm.planar_model_RK4(self.state, self.torque_vec, [1.0, 1.0, 1.0, 1.0],
                                           [self.delta, self.delta, 0, 0], param, self.ax_prev, self.ay_prev)
-            print(self.state[0])
             self.DataLog[frame * Veh_SIM_NUM + i, 0] = (frame * Veh_SIM_NUM + i) * self.kbm.dt
             self.DataLog[frame * Veh_SIM_NUM + i, 1:11] = self.state
             self.DataLog[frame * Veh_SIM_NUM + i, 11:21] = self.state_dot
