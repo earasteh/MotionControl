@@ -100,37 +100,6 @@ class VehicleModel:
         self.wheelbase = wheelbase
         self.max_steer = max_steer
 
-    def kinematic_model(self, x, y, yaw, velocity, throttle, delta, p):
-        """
-        The original kinematic bicycle model
-        :param x:
-        :param y:
-        :param yaw:
-        :param velocity:
-        :param throttle:
-        :param delta:
-        :return:
-        """
-        # Compute the local velocity in the x-axis
-        f_load = velocity * (p.c_r + p.c_a * velocity)
-        velocity += self.dt * (throttle - f_load)
-
-        # Compute the radius and angular velocity of the kinematic bicycle model
-        delta = clip(delta, -self.max_steer, self.max_steer)
-
-        # Compute the state change rate
-        x_dot = velocity * cos(yaw)
-        y_dot = velocity * sin(yaw)
-        omega = velocity * tan(delta) / self.wheelbase
-
-        # Compute the final state using the discrete time model
-        x += x_dot * self.dt
-        y += y_dot * self.dt
-        yaw += omega * self.dt
-        yaw = normalise_angle(yaw)
-
-        return x, y, yaw, velocity, delta, omega
-
     def bicycle_model(self, tire_type, state, delta, acceleration):
         """
         Bicycle model with linear and nonlinear (Dugoff) tires

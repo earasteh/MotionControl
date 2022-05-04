@@ -81,7 +81,7 @@ class Car:
                                                  self.wheelbase, param, waypoints=[px, py, pyaw])
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
         self.long_tracker = LongitudinalController(self.k_v, self.k_i, self.k_d)
-        self.MPC = MPC(5, 0.001, param, self.px, self.py, self.pyaw, np.array([init_x, init_y, init_yaw,
+        self.MPC = MPC(100, 0.01, param, self.px, self.py, self.pyaw, np.array([init_x, init_y, init_yaw,
                                                                                init_vel, 0, 0, 0, 0]))
         self.uk_prev_step = np.array([0, -1 * np.pi / 180])
 
@@ -97,12 +97,12 @@ class Car:
                 #                                    self.total_vel_error, self.dt)
                 # self.prev_vel = self.v
                 # self.MPC.controller()
-                out = self.MPC.solve_mpc([self.x, self.y, self.yaw, self.v, self.state[1], self.state_dot[7]],
+                out = self.MPC.solve_mpc([self.x, self.y, self.yaw, self.v, self.state_dot[1], self.state_dot[7]],
                                          self.uk_prev_step)
                 self.uk_prev_step = out.reshape((2,))
                 tau, delta = out.tolist()
                 self.delta = delta
-                self.torque_vec = [tau] * 4
+                self.torque_vec = [0*tau] * 4
                 # print(f'Solver status: {status} \n')
                 print(f'delta: {self.delta * 180 / np.pi} \n')
                 print(f'tau: {self.torque_vec[0]} \n')

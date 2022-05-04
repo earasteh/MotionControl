@@ -155,11 +155,6 @@ class MPC:
         self.nx = self.model.x.size()[0]
         self.nu = self.model.u.size()[0]
         self.ny = self.nx + self.nu
-        Tfinal = 1
-        Nsim = int(Tfinal * self.N / self.T)
-        # initialize data structs
-        self.SimX = np.ndarray((Nsim, self.nx))
-        self.SimU = np.ndarray((Nsim, self.nu))
 
     def bicycle_model(self, initial_condition, param):
         """Compute the right-hand side of the ODEs
@@ -218,9 +213,9 @@ class MPC:
         state = ca.vertcat(x, y, yaw, vx, vy, omega, tau, delta)
 
         # system inputs (Delta U)
-        Dtau = ca.SX.sym('Dtau')
-        Ddelta = ca.SX.sym('Ddelta')
-        sym_u = ca.vertcat(Dtau, Ddelta)
+        derTau = ca.SX.sym('derTau')
+        derDelta = ca.SX.sym('derDelta')
+        sym_u = ca.vertcat(derTau, derDelta)
 
         # xdot
         x_dot = ca.SX.sym('x_dot')
@@ -259,7 +254,7 @@ class MPC:
         dvy = 1 / m * (Fry - Ffy * np.cos(delta) - m * vx * omega)
         domega = 1 / Izz * (Ffy * lf * np.cos(delta) - Fry * lr)
 
-        expr_f_expl = ca.vertcat(dx, dy, dyaw, dvx, dvy, domega, Dtau, Ddelta)
+        expr_f_expl = ca.vertcat(dx, dy, dyaw, dvx, dvy, domega, derTau, derDelta)
 
         # Constraint on acceleration
         a_long = dvx - vy * omega
@@ -275,8 +270,8 @@ class MPC:
         model.tau_min = -1000
         model.tau_max = +1000
         # input bounds
-        model.ddelta_min = -2 * np.pi / 180  # minimum change rate of stering angle [rad/s]
-        model.ddelta_max = 2 * np.pi / 180  # maximum change rate of steering angle [rad/s]
+        model.ddelta_min = -1 * np.pi / 180  # minimum change rate of stering angle [rad/s]
+        model.ddelta_max = 1 * np.pi / 180  # maximum change rate of steering angle [rad/s]
         model.dtau_min = -100  # -10.0  # minimum torque change rate
         model.dtau_max = 100  # 10.0  # maximum torque change rate
         # nonlinear constraint
@@ -290,7 +285,7 @@ class MPC:
         model.x0 = initial_condition
         # define constraints struct
         constraint.alat = ca.Function("a_lat", [state, sym_u], [a_lat])
-        constraint.expr = ca.vertcat(a_long, a_lat, delta)
+        # constraint.expr = ca.vertcat(a_long, a_lat, tau, delta)
 
         # Define model struct
         # params = ca.types.SimpleNamespace()
@@ -326,7 +321,7 @@ class MPC:
         ocp.model = model_ac
 
         # define constraint
-        model_ac.con_h_expr = constraint.expr
+        # model_ac.con_h_expr = constraint.expr
 
         # dimensions
         nx = model.x.size()[0]
@@ -335,8 +330,8 @@ class MPC:
         ny_e = nx
 
         nsbx = 1
-        nh = constraint.expr.shape[0]
-        # nh = 0
+        # nh = constraint.expr.shape[0]
+        nh = 0
         nsh = nh
         ns = nsh + nsbx
 
@@ -345,16 +340,16 @@ class MPC:
 
         # set cost
         # Q = np.diag([1e-1, 1e-8, 1e-8, 1e-8, 1e-3, 5e-3])
-        Q = np.diag([0, 200000.0, 6572274.74, 10, 0, 0, 0, 0])
+        Q = np.diag([0, 200000.0, 6572274.74, 1000, 0, 0, 0, 0])
 
         R = np.eye(nu)
-        R[0, 0] = 1e-3
-        R[1, 1] = 5e-3
-        # R[0, 0] = 0
-        # R[1, 1] = 0
+        # R[0, 0] = 1e-3
+        # R[1, 1] = 5e-3
+        R[0, 0] = 0
+        R[1, 1] = 0
 
         # Qe = np.diag([5e0, 1e1, 1e-8, 1e-8, 5e-3, 2e-3])
-        Qe = np.diag([0, 200000.0, 6572274.74, 10, 0, 0, 0, 0])
+        Qe = np.diag([0, 200000.0, 6572274.74, 1000, 0, 0, 0, 0])
 
         ocp.cost.cost_type = "LINEAR_LS"
         ocp.cost.cost_type_e = "LINEAR_LS"
@@ -367,7 +362,7 @@ class MPC:
         # Vx[:nx, :nx] = np.eye(nx)
         Vx[1, 1] = 1 #y
         Vx[2, 2] = 1 #yaw
-        Vx[3, 3] = 1 #vx
+        Vx[3, 3] = 0 # forward velocity
         ocp.cost.Vx = Vx
 
         Vu = np.zeros((ny, nu))
@@ -389,32 +384,35 @@ class MPC:
         ocp.cost.yref_e = np.array([0, 0, 0, 10, 0, 0, 0, 0])
 
         # setting constraints
-        ocp.constraints.lbx = np.array([-12])
-        ocp.constraints.ubx = np.array([12])
-        ocp.constraints.idxbx = np.array([1])
+        ocp.constraints.lbx = np.array([model.tau_min, model.delta_min])
+        ocp.constraints.ubx = np.array([model.tau_max, model.delta_max])
+        ocp.constraints.Jbx = np.array([[0, 0, 0, 0, 0, 0, 1, 0],
+                                        [0, 0, 0, 0, 0, 0, 0, 1]])
+
         ocp.constraints.lbu = np.array([model.dtau_min, model.ddelta_min])
         ocp.constraints.ubu = np.array([model.dtau_max, model.ddelta_max])
-        ocp.constraints.idxbu = np.array([0, 1])
+        ocp.constraints.Jbu = np.array([[1, 0],
+                                       [0, 1]])
 
         # Slack variables for state constraints
         # ocp.constraints.lsbx = np.zeros([nsbx])
         # ocp.constraints.usbx = np.zeros([nsbx])
         # ocp.constraints.idxsbx = np.array(range(nsbx))
 
-        ocp.constraints.lh = np.array(
-            [
-                constraint.along_min,
-                constraint.alat_min,
-                model.delta_min,
-            ]
-        )
-        ocp.constraints.uh = np.array(
-            [
-                constraint.along_max,
-                constraint.alat_max,
-                model.delta_max,
-            ]
-        )
+        # ocp.constraints.lh = np.array(
+        #     [
+        #         constraint.along_min,
+        #         constraint.alat_min,
+        #         model.delta_min,
+        #     ]
+        # )
+        # ocp.constraints.uh = np.array(
+        #     [
+        #         constraint.along_max,
+        #         constraint.alat_max,
+        #         model.delta_max,
+        #     ]
+        # )
 
         # Slack variables for along, alat, delta_max
         # ocp.constraints.lsh = np.zeros(nsh)
@@ -433,7 +431,7 @@ class MPC:
         ocp.solver_options.integrator_type = "ERK"
         ocp.solver_options.sim_method_num_stages = 4
         ocp.solver_options.sim_method_num_steps = 3
-        ocp.solver_options.nlp_solver_max_iter = 200
+        ocp.solver_options.nlp_solver_max_iter = 400
         ocp.solver_options.tol = 1e-4
         # ocp.solver_options.nlp_solver_tol_comp = 1e-1
 
@@ -461,7 +459,7 @@ class MPC:
         local_py = self.py[target_index]
         local_yaw = self.pyaw[target_index]
 
-        Q = np.diag([0, 200000.0, 6572274.74, 10, 0, 0, 0, 0])
+        Q = np.diag([0, 200000.0, 6572274.74, 10000, 0, 0, 0, 0])
         R = np.eye(2)
         R[0, 0] = 1e-3
         R[1, 1] = 5e-3
