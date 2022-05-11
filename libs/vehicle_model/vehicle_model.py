@@ -59,10 +59,10 @@ class VehicleParameters:
         self.CRR = self.CFL
         self.DRR = self.DFL
 
-        self.Efront = Efront  # Trail/Front Wheel (m)
-        self.Erear = Erear  # Trail/Rear Wheel (m)
-        self.E = [self.Efront, self.Efront, self.Erear, self.Erear]
-        self.LeverArm = LeverArm
+        # self.Efront = Efront  # Trail/Front Wheel (m)
+        # self.Erear = Erear  # Trail/Rear Wheel (m)
+        # self.E = [self.Efront, self.Efront, self.Erear, self.Erear]
+        # self.LeverArm = LeverArm
         self.wL = self.T / 2
         self.wR = self.T / 2
 
@@ -99,98 +99,6 @@ class VehicleModel:
         self.dt = dt
         self.wheelbase = wheelbase
         self.max_steer = max_steer
-
-    def bicycle_model(self, tire_type, state, delta, acceleration):
-        """
-        Bicycle model with linear and nonlinear (Dugoff) tires
-        :param tire_type: 'Linear', 'Dugoff'
-        :param state:
-        :param delta:
-        :param acceleration:
-        :return:
-        """
-        g = 9.81
-        M = 3600 * 0.453592
-        L = 7 * 0.3048
-        ratio = 0.85
-        b = L / (1 + ratio)
-        a = L - b
-        I = 0.5 * M * a * b
-        C_f = 350 * 4.48 * 180 / np.pi
-        K_U = 1.1
-        C_r = K_U * (a / b) * C_f
-        # N_f = M * g * b / L
-        # N_r = M * g * a / L
-        # mu_max = 0.85  # maximum friction coefficient
-        # C_x = 80000  # Longitudinal tire stiffness (N/rad)
-
-        # states unpack
-        U, V, r, theta, X, Y = state
-
-        alpha_f = delta - (V + a * r) / U
-        alpha_r = (-V + b * r) / U
-
-        if alpha_f > 10:
-            dummy = 1
-
-        # ## Dugoff
-        if tire_type == 'Dugoff':
-            N_f = M * g * b / L
-            N_r = M * g * a / L
-
-            s_f = 0
-            s_r = 0
-
-            mu_f = 0.85
-            mu_r = 0.85
-
-            F_yfd = (C_f * tan(alpha_f)) / (1 - abs(s_f))
-            F_yrd = (C_r * tan(alpha_r)) / (1 - abs(s_r))
-            F_xfd = 0
-            F_xrd = 0
-
-            lamda_f = mu_f / (2 * ((F_yfd / N_f) ** 2 + (F_xfd / N_f) ** 2) ** 0.5)
-            lamda_r = mu_r / (2 * ((F_yrd / N_r) ** 2 + (F_xrd / N_r) ** 2) ** 0.5)
-
-            if lamda_f >= 1:
-                Y_f = F_yfd
-            else:
-                Y_f = F_yfd * 2 * lamda_f * (1 - lamda_f / 2)
-
-            if lamda_r >= 1:
-                Y_r = F_yrd
-            else:
-                Y_r = F_yrd * 2 * lamda_r * (1 - lamda_r / 2)
-
-        # Linear tire
-        if tire_type == 'linear':
-            Y_f = C_f * alpha_f
-            Y_r = C_r * alpha_r
-
-        # Equations
-        U_dot = acceleration
-        V_dot = (Y_f + Y_r) / M - U * r
-        r_dot = (a * Y_f - b * Y_r) / I
-        theta_dot = r
-        X_dot = U * np.cos(theta) - V * np.sin(theta)
-        Y_dot = U * np.sin(theta) + V * np.cos(theta)
-
-        # Integration
-        U += U_dot * self.dt
-        V += V_dot * self.dt
-        r += r_dot * self.dt
-        theta += theta_dot * self.dt
-        X += X_dot * self.dt
-        Y += Y_dot * self.dt
-        yaw = normalise_angle(theta)
-
-        velocity = np.sqrt(U ** 2 + V ** 2)
-
-        state_update = [U, V, r, theta, X, Y]
-        outputs = [Y_f, Y_r, alpha_f, alpha_r]
-
-        return X, Y, yaw, U, delta, theta_dot, state_update, outputs
-        # return [U_dot, V_dot, r_dot, theta_dot, X_dot, Y_dot]
 
     def planar_model(self, state, tire_torques, mu_max, delta, p, ax_prev, ay_prev):
         """:This is the function for 7 ِِDoF model with nonlinear tires (pacejka magic formula)

@@ -99,7 +99,7 @@ class Car:
                 # self.MPC.controller()
                 out = self.MPC.solve_mpc([self.x, self.y, self.yaw, self.v, self.state_dot[1], self.state_dot[7]],
                                          self.uk_prev_step)
-                self.uk_prev_step = out.reshape((2,))
+                self.uk_prev_step = out
                 tau, delta = out.tolist()
                 self.delta = delta
                 self.torque_vec = [0*tau] * 4

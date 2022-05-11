@@ -260,9 +260,9 @@ class MPC:
         a_long = dvx - vy * omega
         a_lat = dvy + vx * omega
 
-        # Model bounds
-        model.n_min = -5  # width of the track [m]
-        model.n_max = 5  # width of the track [m]
+        # # Model bounds
+        # model.n_min = -5  # width of the track [m]
+        # model.n_max = 5  # width of the track [m]
 
         # State bounds
         model.delta_min = -30.0 * np.pi / 180
@@ -284,8 +284,8 @@ class MPC:
         # model.x0 = np.array([0, 0, 0, 0, 0, 0])
         model.x0 = initial_condition
         # define constraints struct
-        constraint.alat = ca.Function("a_lat", [state, sym_u], [a_lat])
-        # constraint.expr = ca.vertcat(a_long, a_lat, tau, delta)
+        # constraint.alat = ca.Function("a_lat", [state, sym_u], [a_lat])
+        constraint.expr = ca.vertcat(a_long, a_lat, tau, delta)
 
         # Define model struct
         # params = ca.types.SimpleNamespace()
@@ -321,7 +321,7 @@ class MPC:
         ocp.model = model_ac
 
         # define constraint
-        # model_ac.con_h_expr = constraint.expr
+        model_ac.con_h_expr = constraint.expr
 
         # dimensions
         nx = model.x.size()[0]
@@ -330,8 +330,8 @@ class MPC:
         ny_e = nx
 
         nsbx = 1
-        # nh = constraint.expr.shape[0]
-        nh = 0
+        nh = constraint.expr.shape[0]
+        # nh = 0
         nsh = nh
         ns = nsh + nsbx
 
@@ -360,9 +360,9 @@ class MPC:
 
         Vx = np.zeros((ny, nx))
         # Vx[:nx, :nx] = np.eye(nx)
-        Vx[1, 1] = 1 #y
-        Vx[2, 2] = 1 #yaw
-        Vx[3, 3] = 0 # forward velocity
+        Vx[1, 1] = 1  # y
+        Vx[2, 2] = 1  # yaw
+        Vx[3, 3] = 0  # forward velocity
         ocp.cost.Vx = Vx
 
         Vu = np.zeros((ny, nu))
@@ -384,35 +384,36 @@ class MPC:
         ocp.cost.yref_e = np.array([0, 0, 0, 10, 0, 0, 0, 0])
 
         # setting constraints
-        ocp.constraints.lbx = np.array([model.tau_min, model.delta_min])
-        ocp.constraints.ubx = np.array([model.tau_max, model.delta_max])
-        ocp.constraints.Jbx = np.array([[0, 0, 0, 0, 0, 0, 1, 0],
-                                        [0, 0, 0, 0, 0, 0, 0, 1]])
+        # ocp.constraints.lbx = np.array([model.tau_min, model.delta_min])
+        # ocp.constraints.ubx = np.array([model.tau_max, model.delta_max])
+        # ocp.constraints.idxbx = np.array([1, 1]) #np.array([[0, 0, 0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 0, 0, 1]])
 
-        ocp.constraints.lbu = np.array([model.dtau_min, model.ddelta_min])
-        ocp.constraints.ubu = np.array([model.dtau_max, model.ddelta_max])
+        ocp.constraints.lbu = np.array([model.dtau_min, 1000 * model.ddelta_min])
+        ocp.constraints.ubu = np.array([model.dtau_max, 1000 * model.ddelta_max])
         ocp.constraints.Jbu = np.array([[1, 0],
-                                       [0, 1]])
+                                        [0, 1]])
 
         # Slack variables for state constraints
         # ocp.constraints.lsbx = np.zeros([nsbx])
         # ocp.constraints.usbx = np.zeros([nsbx])
         # ocp.constraints.idxsbx = np.array(range(nsbx))
 
-        # ocp.constraints.lh = np.array(
-        #     [
-        #         constraint.along_min,
-        #         constraint.alat_min,
-        #         model.delta_min,
-        #     ]
-        # )
-        # ocp.constraints.uh = np.array(
-        #     [
-        #         constraint.along_max,
-        #         constraint.alat_max,
-        #         model.delta_max,
-        #     ]
-        # )
+        ocp.constraints.lh = np.array(
+            [
+                constraint.along_min,
+                constraint.alat_min,
+                model.tau_min,
+                model.delta_min,
+            ]
+        )
+        ocp.constraints.uh = np.array(
+            [
+                constraint.along_max,
+                constraint.alat_max,
+                model.tau_max,
+                model.delta_max,
+            ]
+        )
 
         # Slack variables for along, alat, delta_max
         # ocp.constraints.lsh = np.zeros(nsh)
@@ -459,10 +460,10 @@ class MPC:
         local_py = self.py[target_index]
         local_yaw = self.pyaw[target_index]
 
-        Q = np.diag([0, 200000.0, 6572274.74, 10000, 0, 0, 0, 0])
+        Q = np.diag([0, 200.0, 657.74, 10000, 0, 0, 0, 0])
         R = np.eye(2)
-        R[0, 0] = 1e-3
-        R[1, 1] = 5e-3
+        R[0, 0] = 0*1e-3
+        R[1, 1] = 0*5e-3
         W = scipy.linalg.block_diag(Q, R)
         W_e = Q
 
@@ -482,6 +483,8 @@ class MPC:
         x0 = self.acados_solver.get(0, "x")
         u0 = self.acados_solver.get(0, "u")
 
+        u = x0[6:]
+
         if status != 0:
             print("acados returned status {}.".format(status))
 
@@ -495,7 +498,7 @@ class MPC:
         self.acados_solver.set(0, "lbx", x0)
         self.acados_solver.set(0, "ubx", x0)
 
-        return np.array(u0)
+        return u
 
 
 class LongitudinalController:
