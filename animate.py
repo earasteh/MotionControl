@@ -24,7 +24,7 @@ def main():
     sim = Simulation()
     path = world.path
 
-    car = Car(path.px[1800], path.py[1800], path.pyaw[1800], path.px, path.py, path.pyaw, path.s, sim.veh_dt)
+    car = Car(path.px[0], path.py[0] + 5, path.pyaw[0], path.px, path.py, path.pyaw, path.s, sim.veh_dt)
     desc = Description(car.overall_length, car.overall_width, car.rear_overhang, car.tyre_diameter, car.tyre_width,
                        car.axle_track, car.wheelbase)
 
@@ -80,9 +80,10 @@ def main():
     # anim.save('resources/animation.gif', fps=10)   #Uncomment to save the animation
     plt.show()
 
-    plot_results(data_cleaning(car.DataLog))
+    plot_results(data_cleaning(car.DataLog), WhichPlots=('crosstrack', 'traj', 'delta', 'MPC-flag', 'MPC-x0'))
 
     plt.close('all')
+
 
 if __name__ == '__main__':
     main()
