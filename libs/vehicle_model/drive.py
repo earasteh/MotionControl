@@ -50,11 +50,6 @@ class Car:
         self.py = py
         self.pyaw = pyaw
         self.ps = ps  # path parameter (x(s), y(s), yaw(s))
-        # Lateral Tracker parameters
-        self.k = 1
-        self.ksoft = 0.01
-        self.kyaw = 0
-        self.ksteer = 0
         self.crosstrack_error = None
         self.target_id = None
         self.x_del = [0]
@@ -76,10 +71,9 @@ class Car:
         self.axle_track = 1.662
         self.rear_overhang = (self.overall_length - self.wheelbase) / 2
         self.colour = 'black'
-        self.lateral_tracker = StanleyController(self.k, self.ksoft, self.kyaw, self.ksteer, self.max_steer,
-                                                 self.wheelbase, param, waypoints=[px, py, pyaw])
+
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
-        self.MPC = MPC(100, 0.01, param, self.px, self.py, self.pyaw, np.array([init_x, init_y, init_yaw,
+        self.MPC = MPC(50, 0.01, param, self.px, self.py, self.pyaw, np.array([init_x, init_y, init_yaw,
                                                                                init_vel, 0, 0, 0, 0]))
         self.uk_prev_step = np.array([0, 1 * np.pi / 180])
 
@@ -98,7 +92,6 @@ class Car:
                 # print(f'Solver status: {status} \n')
                 print(f'delta: {self.delta * 180 / np.pi} \n')
                 print(f'tau: {self.torque_vec[0]} \n')
-                self.lateral_tracker.update_waypoints()
 
                 # Filter the delta output
                 # self.x_del.append((1 - 1e-5 / (2 * 0.001)) * self.x_del[-1] + 1e-5 / (2 * 0.001) * self.delta)

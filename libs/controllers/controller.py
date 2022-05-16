@@ -194,10 +194,10 @@ class MPC:
         Cr = param.CRL
         Dr = param.DRL
         # Longitudinal parameters
-        Cm1 = 0.287
-        Cm2 = 0.0545
-        Cr0 = 0.0518
-        Cr2 = 0.00035
+        # Cm1 = 0.287
+        # Cm2 = 0.0545
+        # Cr0 = 0.0518
+        # Cr2 = 0.00035
 
         # states
         x = ca.SX.sym('x')
@@ -270,19 +270,19 @@ class MPC:
         model.tau_min = -1000
         model.tau_max = +1000
         # input bounds
-        model.ddelta_min = -1000 * np.pi / 180  # minimum change rate of stering angle [rad/s]
-        model.ddelta_max = +1000 * np.pi / 180  # maximum change rate of steering angle [rad/s]
+        model.ddelta_min = -100 * np.pi / 180  # minimum change rate of stering angle [rad/s]
+        model.ddelta_max = +100 * np.pi / 180  # maximum change rate of steering angle [rad/s]
         model.dtau_min = -100  # -10.0  # minimum torque change rate
         model.dtau_max = 100  # 10.0  # maximum torque change rate
         # nonlinear constraint
-        constraint.alat_min = -4  # maximum lateral force [m/s^2]
-        constraint.alat_max = 4  # maximum lateral force [m/s^1]
+        constraint.alat_min = -8  # maximum lateral force [m/s^2]
+        constraint.alat_max = 8 # maximum lateral force [m/s^1]
         constraint.along_min = -4  # maximum lateral force [m/s^2]
         constraint.along_max = 4  # maximum lateral force [m/s^2]
 
         # Define initial conditions
-        # model.x0 = np.array([0, 0, 0, 0, 0, 0])
-        model.x0 = initial_condition
+        model.x0 = np.array([0, 15, 0, 10, 0, 0, 0, 0])
+        # model.x0 = initial_condition
         # define constraints struct
         # constraint.alat = ca.Function("a_lat", [state, sym_u], [a_lat])
         constraint.expr = ca.vertcat(a_long, a_lat, tau, delta)
@@ -340,7 +340,7 @@ class MPC:
 
         # set cost
         # Q = np.diag([1e-1, 1e-8, 1e-8, 1e-8, 1e-3, 5e-3])
-        Q = np.diag([0, 200000.0, 600.74, 100, 0, 0, 0, 0])
+        Q = np.diag([0, 200000.0, 600000.0, 0, 0, 0, 0, 0])
 
         R = np.eye(nu)
         # R[0, 0] = 1e-3
@@ -349,7 +349,7 @@ class MPC:
         R[1, 1] = 0
 
         # Qe = np.diag([5e0, 1e1, 1e-8, 1e-8, 5e-3, 2e-3])
-        Qe = np.diag([0, 100.0, 60, 1, 0, 0, 0, 0])
+        Qe = np.diag([0, 2000.0, 6000.0, 0, 0, 0, 0, 0])
 
         ocp.cost.cost_type = "LINEAR_LS"
         ocp.cost.cost_type_e = "LINEAR_LS"
@@ -380,8 +380,8 @@ class MPC:
         # ocp.cost.Zu = 1 * np.ones((ns,))
 
         # set intial references
-        ocp.cost.yref = np.array([0, 0, 0, 10, 0, 0, 0, 0, 0, 0])
-        ocp.cost.yref_e = np.array([0, 0, 0, 10, 0, 0, 0, 0])
+        ocp.cost.yref = np.array([0, 10, 0, 10, 0, 0, 0, 0, 0, 0])
+        ocp.cost.yref_e = np.array([0, 10, 0, 10, 0, 0, 0, 0])
 
         # setting constraints
         # ocp.constraints.lbx = np.array([model.tau_min, model.delta_min])
@@ -428,11 +428,12 @@ class MPC:
         # ocp.solver_options.qp_solver = 'FULL_CONDENSING_QPOASES'
         ocp.solver_options.qp_solver = "PARTIAL_CONDENSING_HPIPM"
         ocp.solver_options.nlp_solver_type = "SQP"
+        # ocp.solver_options.levenberg_marquardt = 1.0
         ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
         ocp.solver_options.integrator_type = "ERK"
         ocp.solver_options.sim_method_num_stages = 4
         ocp.solver_options.sim_method_num_steps = 3
-        ocp.solver_options.nlp_solver_max_iter = 400
+        ocp.solver_options.nlp_solver_max_iter = 6000
         ocp.solver_options.tol = 1e-4
         # ocp.solver_options.nlp_solver_tol_comp = 1e-1
 
@@ -460,19 +461,20 @@ class MPC:
         local_py = self.py[target_index]
         local_yaw = self.pyaw[target_index]
 
-        Q = np.diag([0, 200000.0, 65700.74, 10000, 0, 0, 0, 0])
+        Q = np.diag([0, 200000, 600, 0, 0, 0, 0, 0])
         R = np.eye(2)
         R[0, 0] = 0*1e-3
         R[1, 1] = 0*5e-3
-        W = scipy.linalg.block_diag(Q, R)
-        W_e = Q
+        W = self.N/self.T * scipy.linalg.block_diag(Q, R)
+        Qe = np.diag([0, 20000.0, 6000, 0, 0, 0, 0, 0]) / (self.N/self.T)
+        W_e = Qe
 
         for i in range(self.N):
             self.acados_solver.cost_set(i, 'W', W)
-            yref = np.array([local_px, local_py, local_yaw, 10.0, 0, 0, 0, 0, 0, 0])
+            yref = np.array([0, local_py, 0*local_yaw, 0.0, 0, 0, 0, 0, 0, 0])
             self.acados_solver.set(i, "yref", yref)
         self.acados_solver.cost_set(self.N, 'W', W_e)
-        yref_N = np.array([local_px, local_py, local_yaw, 10.0, 0, 0, 0, 0])
+        yref_N = np.array([0, local_py, 0*local_yaw, 0.0, 0, 0, 0, 0])
         self.acados_solver.set(self.N, "yref", yref_N)
 
         # print(f'yref = {yref}')
@@ -482,17 +484,20 @@ class MPC:
         status = self.acados_solver.solve()
 
         # get solution
-        x0 = self.acados_solver.get(0, "x")
-        u0 = self.acados_solver.get(0, "u")
+        x0 = self.acados_solver.get(1, "x") # x1 used for solution
+        u0 = self.acados_solver.get(1, "u")
         xN = self.acados_solver.get(self.N, "x")
 
         # print(f'yr: {y_r}')
-        # print(f'local_py:{local_py}')
-        print(f'x = {x0}')
+        print(f'local_py:{local_py}')
+        print(f'local_yaw:{local_yaw}')
+        # print(f'x = {x0}')
 
         # print(f'MPC {local_py - xN[1]} vs. real {local_py - y_r}')
 
+        # u = uk_prev_step + u0
         u = x0[6:]
+
         crosstrack = y_r - local_py
 
         if status != 0:
@@ -506,7 +511,8 @@ class MPC:
         x1 = self.acados_solver.get(1, "x") # xk1
         # print(f'x1 = {x1}')
         # update initial condition
-        xnew = np.array([x_r, y_r, yaw_r, vx_r, vy_r, omega_r, x1[6], x1[7]])
+        # xnew = np.array([x_r, y_r, yaw_r, vx_r, vy_r, omega_r, x1[6], x1[7]])
+
         self.acados_solver.set(0, "lbx", x1)
         self.acados_solver.set(0, "ubx", x1)
         # self.initial_conditions = x0
