@@ -443,18 +443,75 @@ def main():
                     t_eval=t_array)
 
     # SystemModel(self, t, states, u, param, xs=None, us=None)
-    veh = VehicleModel()
-    state0_mpc = [0, 0, 0, U_init, 0, 0]
-    sol_mpc = solve_ivp(veh.SystemModel, [0, 5], state0_mpc, args=([tire_torques[0], delta[0]], p1), method='RK45',
-                    dense_output=True,
-                    t_eval=t_array)
+    state0_mpc = [0, 0, 0, U_init, 0, 0, 0, 2*pi/180]
+
+    ## MPC Model
+    from libs.controllers.controller import MPC
+    from acados_template import AcadosSim, AcadosSimSolver
+
+    px = np.linspace(0, 100, 1000)
+    py = np.zeros((1, 1000))
+    pyaw = np.zeros((1, 1000))
+    init = np.array([0, 0, 0, 10, 0, 0, 0, 2 * np.pi / 180])
+    N = 49
+    Tf = 0.1
+
+    test_mpc = MPC(N, Tf, param=p1, px=px, py=py, pyaw=pyaw, veh_initial_conditions=state0_mpc)
+
+    sim = AcadosSim()
+    model, constraint = test_mpc.bicycle_model(init, p1)
+    sim.model = model
+    sim.model.dyn_ext_fun_type = 'casadi'
+
+    nx = model.x.size()[0]
+    nu = model.u.size()[0]
+
+    # set simulation time
+    sim.solver_options.T = Tf
+
+    # set options
+    sim.solver_options.integrator_type = 'IRK'
+    sim.solver_options.num_stages = 3
+    sim.solver_options.num_steps = 3
+    sim.solver_options.newton_iter = 3  # for implicit integrator
+    sim.solver_options.collocation_type = "GAUSS_RADAU_IIA"
+
+    # create
+    acados_integrator = AcadosSimSolver(sim)
+
+    simX = np.ndarray((N + 1, nx))
+    x0 = init
+    u0 = np.array([0.0, 0.0])
+    acados_integrator.set("u", u0)
+
+    simX[0, :] = x0
+
+    for i in range(N):
+        if simX[i, 7] < 2 * np.pi / 180:
+            acados_integrator.set("u", np.array([0.0, 0.1 * np.pi / 180]))
+
+        # set initial state
+        acados_integrator.set("x", simX[i, :])
+        # initialize IRK
+        if sim.solver_options.integrator_type == 'IRK':
+            acados_integrator.set("xdot", np.zeros((nx,)))
+
+        # solve
+        status = acados_integrator.solve()
+        # get solution
+        simX[i + 1, :] = acados_integrator.get("x")
+
+    if status != 0:
+        raise Exception('acados returned status {}. Exiting.'.format(status))
+
+    # sol_mpc = solve_ivp(veh.SystemModel, [0, 5], state0_mpc, args=([tire_torques[0], delta[0]], p1), method='RK45',
+    #                 dense_output=True,
+    #                 t_eval=t_array)
 
     t_planar = sol_planar.t
     U_planar, V_planar, wz_planar, wFL_planar, wFR_planar, wRL_planar, wRR_planar, yaw_planar, x_planar, y_planar = sol_planar.y
 
-    t_mpc = sol_mpc.t
-    x_mpc, y_mpc, yaw_mpc, vx_mpc, vy_mpc, omega_mpc = sol_mpc.y
-
+    t = np.linspace(0, Tf, N + 1)
     # f = interp1d(t_planar, Vy_planar)
     # Vy_interp = Vx_interp = np.zeros(len(t_planar))
     # for i, tt in enumerate(t_planar):
@@ -463,7 +520,7 @@ def main():
     plt.figure()
     plt.title('x-y position')
     plt.plot(x_planar, y_planar)
-    plt.plot(x_mpc, y_mpc)
+    plt.plot(simX[:, 0], simX[:, 1])
     plt.legend(['Planar model', 'MPC model'])
     plt.xlabel('X (m)')
     plt.ylabel('Y (m)')
@@ -473,7 +530,7 @@ def main():
     plt.xlabel('Time (Sec)')
     plt.ylabel('Yaw rate (rad/sec)')
     plt.plot(t_planar, yaw_planar)
-    plt.plot(t_mpc, yaw_mpc)
+    plt.plot(t, simX[:, 5])
     # plt.figure()
     # plt.title('Lateral Velocity')
     # plt.xlabel('Time (Sec)')
@@ -482,18 +539,18 @@ def main():
     # # plt.plot(t_, Vy, label='real')
     # plt.legend()
     #
-    plt.figure()
-    plt.title('U')
-    plt.xlabel('Time (Sec)')
-    plt.ylabel('Velocity (m/sec)')
-    plt.plot(t_planar, U_planar, label='U')
-    plt.plot(t_mpc, vx_mpc, label='U-mpc')
-    plt.figure()
-    plt.title('V')
-    plt.xlabel('Time (Sec)')
-    plt.ylabel('Velocity (m/sec)')
-    plt.plot(t_planar, V_planar, label='V')
-    plt.plot(t_mpc, vy_mpc, label='V-mpc')
+    # plt.figure()
+    # plt.title('U')
+    # plt.xlabel('Time (Sec)')
+    # plt.ylabel('Velocity (m/sec)')
+    # plt.plot(t_planar, U_planar, label='U')
+    # plt.plot(t_mpc, vx_mpc, label='U-mpc')
+    # plt.figure()
+    # plt.title('V')
+    # plt.xlabel('Time (Sec)')
+    # plt.ylabel('Velocity (m/sec)')
+    # plt.plot(t_planar, V_planar, label='V')
+    # plt.plot(t_mpc, vy_mpc, label='V-mpc')
     plt.show()
 
 

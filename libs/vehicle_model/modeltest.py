@@ -43,12 +43,15 @@ test_mpc = MPC(N, Tf, param=parameters, px=px, py=py, pyaw=pyaw, veh_initial_con
 sim = AcadosSim()
 model, constraint = test_mpc.bicycle_model(init, parameters)
 sim.model = model
+sim.model.dyn_ext_fun_type = 'casadi'
 
 nx = model.x.size()[0]
 nu = model.u.size()[0]
 
 # set simulation time
 sim.solver_options.T = Tf
+# sim.solver_options.Tsim = 20*0.1
+
 # set options
 sim.solver_options.integrator_type = 'IRK'
 sim.solver_options.num_stages = 3
@@ -73,7 +76,7 @@ for i in range(N):
     # set initial state
     acados_integrator.set("x", simX[i, :])
     # initialize IRK
-    if sim.solver_options.integrator_type == 'ERK':
+    if sim.solver_options.integrator_type == 'IRK':
         acados_integrator.set("xdot", np.zeros((nx,)))
 
     # solve
@@ -86,6 +89,10 @@ if status != 0:
 
 S_forw = acados_integrator.get("S_forw")
 print("S_forw, sensitivities of simulaition result wrt x,u:\n", S_forw)
+
+
+
+
 
 plt.figure()
 plt.plot(simX[:, 0], simX[:, 1])

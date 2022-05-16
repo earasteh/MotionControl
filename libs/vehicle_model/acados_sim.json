@@ -1,0 +1,50 @@
+{
+    "acados_include_path": "/home/ehsan/acados/include",
+    "acados_lib_path": "/home/ehsan/acados/lib",
+    "code_export_directory": "c_generated_code",
+    "cython_include_dirs": "",
+    "dims": {
+        "np": 0,
+        "nu": 2,
+        "nx": 8,
+        "nz": 0
+    },
+    "model": {
+        "ddelta_max": 1.7453292519943295,
+        "ddelta_min": -1.7453292519943295,
+        "delta_max": 0.4363323129985824,
+        "delta_min": -0.4363323129985824,
+        "dtau_max": 100,
+        "dtau_min": -100,
+        "dyn_ext_fun_type": "casadi",
+        "name": "bicycle_model",
+        "tau_max": 1000,
+        "tau_min": -1000,
+        "x0": [
+            0,
+            15,
+            0,
+            10,
+            0,
+            0,
+            0,
+            0
+        ]
+    },
+    "parameter_values": [],
+    "problem_class": "SIM",
+    "solver_options": {
+        "Tsim": 0.1,
+        "collocation_type": "GAUSS_RADAU_IIA",
+        "integrator_type": "IRK",
+        "output_z": false,
+        "sens_adj": false,
+        "sens_algebraic": false,
+        "sens_forw": true,
+        "sens_hess": false,
+        "sim_method_jac_reuse": 0,
+        "sim_method_newton_iter": 3,
+        "sim_method_num_stages": 3,
+        "sim_method_num_steps": 3
+    }
+}

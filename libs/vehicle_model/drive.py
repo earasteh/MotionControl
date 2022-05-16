@@ -11,7 +11,7 @@ from libs.utils.env import world
 # Controller time = 1e-2
 # ###
 
-Veh_SIM_NUM = 10  # Number of times vehicle simulation (Simulation_resolution  = sim.dt/Veh_SIM_NUM)
+Veh_SIM_NUM = 100  # Number of times vehicle simulation (Simulation_resolution  = sim.dt/Veh_SIM_NUM)
 Control_SIM_NUM = Veh_SIM_NUM / 10
 
 param = VehicleParameters()
@@ -75,7 +75,7 @@ class Car:
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
         self.MPC = MPC(50, 0.01, param, self.px, self.py, self.pyaw, np.array([init_x, init_y, init_yaw,
                                                                                init_vel, 0, 0, 0, 0]))
-        self.uk_prev_step = np.array([0, 1 * np.pi / 180])
+        self.uk_prev_step = np.array([0, 0])
 
     def drive(self, frame):
         # Motion Planner:
