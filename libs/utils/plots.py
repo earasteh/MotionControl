@@ -25,10 +25,8 @@ def data_cleaning(DataLog):
                                                    'Fy_FL', 'Fy_FR', 'Fy_RL', 'Fy_RR',
                                                    'Fz_FL', 'Fz_FR', 'Fz_RL', 'Fz_RR',
                                                    'sFL', 'sFR', 'sRL', 'sRR', 'Fxt_FL', 'Fyt_FL', 'crosstrack',
-                                                   'x0-x', 'x0-y', 'x0-yaw', 'x0-vx', 'x0-vy', 'x0-omega', 'x0-tau',
-                                                   'x0-delta',
-                                                   'xN-x', 'xN-y', 'xN-yaw', 'xN-vx', 'xN-vy', 'xN-omega', 'xN-tau',
-                                                   'xN-delta', 'flag']
+                                                   'x0-x', 'x0-y', 'x0-yaw', 'x0-vx', 'x0-vy', 'x0-omega',
+                                                   'xN-x', 'xN-y', 'xN-yaw', 'xN-vx', 'xN-vy', 'xN-omega', 'flag']
                               )
     if not os.path.exists('results'):
         os.makedirs('results')
@@ -255,12 +253,10 @@ def plot_results(DataLog_pd, WhichPlots, figsize_input=None):
         plt.plot(DataLog_pd['time'], DataLog_pd['x0-x'])
         plt.plot(DataLog_pd['time'], DataLog_pd['x0-y'])
         plt.plot(DataLog_pd['time'], DataLog_pd['x0-yaw'])
-        plt.plot(DataLog_pd['time'], DataLog_pd['x0-delta'])
-        plt.plot(DataLog_pd['time'], DataLog_pd['x0-tau'])
         plt.grid()
         plt.xlabel('Time (Sec.)')
         plt.ylabel('MPC - x0 (initial state at each iteration)')
-        plt.legend(['x', 'y', 'yaw', 'delta', 'tau'])
+        plt.legend(['x', 'y', 'yaw'])
         plt.savefig('results/' + fig_name + '.png', dpi=150)
 
     plt.show()

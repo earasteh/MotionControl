@@ -21,7 +21,7 @@ class Car:
 
     def __init__(self, init_x, init_y, init_yaw, px, py, pyaw, ps, dt):
         # Variable to log all the data
-        self.DataLog = np.zeros((Veh_SIM_NUM * 4000, 45 + 8 + 8 + 1))
+        self.DataLog = np.zeros((Veh_SIM_NUM * 4000, 45 + 6 + 6 + 1))
         # Model parameters
         init_vel = 10.0
         self.x = init_x
@@ -73,9 +73,9 @@ class Car:
         self.colour = 'black'
 
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
-        self.MPC = MPC(50, 0.01, param, self.px, self.py, self.pyaw, np.array([init_x, init_y, init_yaw,
+        self.MPC = MPC(100, 0.1, param, self.px, self.py, self.pyaw, np.array([init_x, init_y, init_yaw,
                                                                                init_vel, 0, 0, 0, 0]))
-        self.uk_prev_step = np.array([0, 0])
+        self.uk_prev_step = np.array([0, -1 * np.pi/180])
 
     def drive(self, frame):
         # Motion Planner:
@@ -108,8 +108,8 @@ class Car:
             self.DataLog[frame * Veh_SIM_NUM + i, 22:26] = self.torque_vec
             self.DataLog[frame * Veh_SIM_NUM + i, 26:44] = outputs
             self.DataLog[frame * Veh_SIM_NUM + i, 44] = self.crosstrack_error
-            self.DataLog[frame * Veh_SIM_NUM + i, 45:45 + 8] = x0
-            self.DataLog[frame * Veh_SIM_NUM + i, 45 + 8:45 + 8 + 8] = xN
-            self.DataLog[frame * Veh_SIM_NUM + i, 45 + 8 + 8] = status
+            self.DataLog[frame * Veh_SIM_NUM + i, 45:45 + 6] = x0
+            self.DataLog[frame * Veh_SIM_NUM + i, 45 + 6:45 + 6 + 6] = xN
+            self.DataLog[frame * Veh_SIM_NUM + i, 45 + 6 + 6] = status
 
         os.system('cls' if os.name == 'nt' else 'clear')

@@ -135,10 +135,10 @@ class VehicleModel:
         DfzyF = p.m * p.hg * p.b / ((p.a + p.b) * (p.wL + p.wR))
         DfzyR = p.m * p.hg * p.a / ((p.a + p.b) * (p.wL + p.wR))
 
-        fFLz = fFLz0 - DfzxL * ax_prev - DfzyF * ay_prev
-        fFRz = fFRz0 - DfzxR * ax_prev + DfzyF * ay_prev
-        fRLz = fRLz0 + DfzxL * ax_prev - DfzyR * ay_prev
-        fRRz = fRRz0 + DfzxR * ax_prev + DfzyR * ay_prev
+        fFLz = fFLz0 #- DfzxL * ax_prev - DfzyF * ay_prev
+        fFRz = fFRz0 #- DfzxR * ax_prev + DfzyF * ay_prev
+        fRLz = fRLz0 #+ DfzxL * ax_prev - DfzyR * ay_prev
+        fRRz = fRRz0 #+ DfzxR * ax_prev + DfzyR * ay_prev
 
         ## Compute tire slip Wheel velocities
         vFLxc = U - p.T * wz / 2
@@ -387,8 +387,8 @@ class VehicleModel:
         Nf = lr / (lr+lf) * m * 9.81
         Nr = lf / (lr+lf) * m * 9.81
         # Lateral Forces
-        Ffy = Df * np.sin(Cf * np.arctan(Bf * alpha_f)) * Nf
-        Fry = Dr * np.sin(Cr * np.arctan(Br * alpha_r)) * Nr
+        Ffy = 2 * Df * np.sin(Cf * np.arctan(Bf * alpha_f)) * Nf
+        Fry = 2 * Dr * np.sin(Cr * np.arctan(Br * alpha_r)) * Nr
         # Frx = (Cm1 - Cm2 * vx) * D - Cr0 - Cr2 * vx**2
         Frx = tau / rw
 
@@ -433,7 +433,7 @@ def main():
     print("Initial condition:", state0_planar)
 
     tire_torques = [0, 0, 0, 0]
-    delta = pi / 180 * array([2, 2, 0, 0])
+    delta = np.pi / 180 * array([2, 2, 0, 0])
     mu_max = [1, 1, 1, 1]  # road surface maximum friction
 
     # planar_integrate(state0, tire_torques, mu_max, delta, p1)
@@ -442,8 +442,18 @@ def main():
                     dense_output=True,
                     t_eval=t_array)
 
+    t_planar = sol_planar.t
+    U_planar, V_planar, wz_planar, wFL_planar, wFR_planar, wRL_planar, wRR_planar, yaw_planar, x_planar, y_planar = sol_planar.y
+
     # SystemModel(self, t, states, u, param, xs=None, us=None)
-    state0_mpc = [0, 0, 0, U_init, 0, 0, 0, 2*pi/180]
+    state0_mpc = [0, 0, 0, U_init, 0, 0]
+    veh = VehicleModel()
+    ## old mpc model
+    sol_oldmpc = solve_ivp(veh.SystemModel, [0, 5], state0_mpc, args=([tire_torques[0], delta[0]], p1), method='RK45',
+                    dense_output=True,
+                    t_eval=t_array)
+    t_oldmpc = sol_oldmpc.t
+    x_ompc, y_ompc, yaw_ompc, U_ompc, V_ompc, omega_ompc = sol_oldmpc.y
 
     ## MPC Model
     from libs.controllers.controller import MPC
@@ -452,9 +462,9 @@ def main():
     px = np.linspace(0, 100, 1000)
     py = np.zeros((1, 1000))
     pyaw = np.zeros((1, 1000))
-    init = np.array([0, 0, 0, 10, 0, 0, 0, 2 * np.pi / 180])
-    N = 49
-    Tf = 0.1
+    init = np.array([0, 0, 0, U_init, 0, 0])
+    N = 500
+    Tf = 0.01
 
     test_mpc = MPC(N, Tf, param=p1, px=px, py=py, pyaw=pyaw, veh_initial_conditions=state0_mpc)
 
@@ -481,15 +491,12 @@ def main():
 
     simX = np.ndarray((N + 1, nx))
     x0 = init
-    u0 = np.array([0.0, 0.0])
+    u0 = np.array([0.0, 2.0 * np.pi/180])
     acados_integrator.set("u", u0)
 
     simX[0, :] = x0
 
     for i in range(N):
-        if simX[i, 7] < 2 * np.pi / 180:
-            acados_integrator.set("u", np.array([0.0, 0.1 * np.pi / 180]))
-
         # set initial state
         acados_integrator.set("x", simX[i, :])
         # initialize IRK
@@ -504,14 +511,8 @@ def main():
     if status != 0:
         raise Exception('acados returned status {}. Exiting.'.format(status))
 
-    # sol_mpc = solve_ivp(veh.SystemModel, [0, 5], state0_mpc, args=([tire_torques[0], delta[0]], p1), method='RK45',
-    #                 dense_output=True,
-    #                 t_eval=t_array)
 
-    t_planar = sol_planar.t
-    U_planar, V_planar, wz_planar, wFL_planar, wFR_planar, wRL_planar, wRR_planar, yaw_planar, x_planar, y_planar = sol_planar.y
-
-    t = np.linspace(0, Tf, N + 1)
+    t = np.linspace(0, N*Tf, N + 1)
     # f = interp1d(t_planar, Vy_planar)
     # Vy_interp = Vx_interp = np.zeros(len(t_planar))
     # for i, tt in enumerate(t_planar):
@@ -521,7 +522,8 @@ def main():
     plt.title('x-y position')
     plt.plot(x_planar, y_planar)
     plt.plot(simX[:, 0], simX[:, 1])
-    plt.legend(['Planar model', 'MPC model'])
+    plt.plot(x_ompc, y_ompc)
+    plt.legend(['Planar model', 'MPC model', 'Old MPC'])
     plt.xlabel('X (m)')
     plt.ylabel('Y (m)')
 
@@ -529,8 +531,11 @@ def main():
     plt.title('yaw rate')
     plt.xlabel('Time (Sec)')
     plt.ylabel('Yaw rate (rad/sec)')
-    plt.plot(t_planar, yaw_planar)
+    plt.plot(t_planar, wz_planar)
     plt.plot(t, simX[:, 5])
+    plt.plot(t_oldmpc, omega_ompc)
+    plt.legend(['Planar model', 'MPC model', 'Old MPC'])
+
     # plt.figure()
     # plt.title('Lateral Velocity')
     # plt.xlabel('Time (Sec)')

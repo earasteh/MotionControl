@@ -11,7 +11,7 @@ class Simulation:
 
     def __init__(self):
         fps = 100.0
-        t_final = 7.0
+        t_final = 10.0
         self.frame_dt = 1 / fps
         self.veh_dt = self.frame_dt / Veh_SIM_NUM
         self.controller_dt = self.frame_dt / Control_SIM_NUM
