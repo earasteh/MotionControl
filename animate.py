@@ -11,7 +11,7 @@ class Simulation:
 
     def __init__(self):
         fps = 100.0
-        t_final = 10.0
+        t_final = 3.0
         self.frame_dt = 1 / fps
         self.veh_dt = self.frame_dt / Veh_SIM_NUM
         self.controller_dt = self.frame_dt / Control_SIM_NUM
@@ -58,7 +58,7 @@ def main():
         ax.set_ylim(car.y - sim.map_size, car.y + sim.map_size)
 
         # Drive and draw car
-        car.drive(frame)
+        car.drive(frame, status_error=0)
 
         outline_plot, fr_plot, rr_plot, fl_plot, rl_plot = desc.plot_car(car.x, car.y, car.yaw, car.delta)
         outline.set_data(*outline_plot)

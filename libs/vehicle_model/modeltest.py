@@ -1,111 +1,112 @@
 import numpy as np
+from numpy import cos, sin, sqrt, arctan, pi
 import matplotlib.pyplot as plt
-
-# Bf1 = 20.6357
-# Cf1 = 1.5047
-# Df1 = 1.1233
-#
-# Bf2 = 2.579
-# Cf2 = 1.2
-# Df2 = 0.192
-#
-#
-# alpha_f = np.linspace(-20, 20, 1000) * np.pi / 180
-#
-# Ffy_1 = Df1 * np.sin(Cf1 * np.arctan(Bf1 * alpha_f))
-# Ffy_2 = Df2 * np.sin(Cf2 * np.arctan(Bf2 * alpha_f))
-#
-# plt.figure()
-# plt.plot(alpha_f * 180/np.pi, Ffy_1)
-# plt.plot(alpha_f * 180/np.pi, Ffy_2)
-# plt.xlabel(r'$\alpha (degrees)$')
-# plt.ylabel(r'$F_y (N)$')
-# plt.legend(['Normal values', 'MPCC values'])
-# plt.grid()
-# plt.show()
-
-
-from libs.controllers.controller import MPC
 from libs.vehicle_model.vehicle_model import VehicleParameters
-from acados_template import AcadosSim, AcadosSimSolver
 
-parameters = VehicleParameters()
-
-px = np.linspace(0, 100, 1000)
-py = np.zeros((1, 1000))
-pyaw = np.zeros((1, 1000))
-init = np.array([0, 0, 0, 10, 0, 0, 0, 2*np.pi/180])
-N = 20
-Tf = 0.1
-
-test_mpc = MPC(N, Tf, param=parameters, px=px, py=py, pyaw=pyaw, veh_initial_conditions=init)
-
-sim = AcadosSim()
-model, constraint = test_mpc.bicycle_model(init, parameters)
-sim.model = model
-sim.model.dyn_ext_fun_type = 'casadi'
-
-nx = model.x.size()[0]
-nu = model.u.size()[0]
-
-# set simulation time
-sim.solver_options.T = Tf
-# sim.solver_options.Tsim = 20*0.1
-
-# set options
-sim.solver_options.integrator_type = 'IRK'
-sim.solver_options.num_stages = 3
-sim.solver_options.num_steps = 3
-sim.solver_options.newton_iter = 3  # for implicit integrator
-sim.solver_options.collocation_type = "GAUSS_RADAU_IIA"
-
-# create
-acados_integrator = AcadosSimSolver(sim)
-
-simX = np.ndarray((N + 1, nx))
-x0 = init
-u0 = np.array([0.0, 0.0])
-acados_integrator.set("u", u0)
-
-simX[0, :] = x0
-
-for i in range(N):
-    if simX[i, 7] < 2 * np.pi / 180:
-        acados_integrator.set("u", np.array([0.0, 0.1 * np.pi / 180]))
-
-    # set initial state
-    acados_integrator.set("x", simX[i, :])
-    # initialize IRK
-    if sim.solver_options.integrator_type == 'IRK':
-        acados_integrator.set("xdot", np.zeros((nx,)))
-
-    # solve
-    status = acados_integrator.solve()
-    # get solution
-    simX[i + 1, :] = acados_integrator.get("x")
-
-if status != 0:
-    raise Exception('acados returned status {}. Exiting.'.format(status))
-
-S_forw = acados_integrator.get("S_forw")
-print("S_forw, sensitivities of simulaition result wrt x,u:\n", S_forw)
+"""
+Tire model test
+"""
+p1 = VehicleParameters()
 
 
+def full_tire_function(p, lat_slip, long_slip, delta):
+    ## Longitudinal slip
+    sFLx, sFRx, sRLx, sRRx = long_slip
+
+    ## Lateral slip
+    sFLy, sFRy, sRLy, sRRy = lat_slip
+
+    ## delta
+    deltaFL, deltaFR, deltaRL, deltaRR = delta
+
+    # Parameters
+    g = 9.81
+
+    p.DFL = 1
+    p.DFR = 1
+    p.DRL = 1
+    p.DRR = 1
+
+    ## Normal forces (static forces)
+    fFLz0 = p.b / (p.a + p.b) * p.m * g / 2
+    fFRz0 = p.b / (p.a + p.b) * p.m * g / 2
+    fRLz0 = p.a / (p.a + p.b) * p.m * g / 2
+    fRRz0 = p.a / (p.a + p.b) * p.m * g / 2
+
+    fFLz = fFLz0
+    fFRz = fFRz0
+    fRLz = fRLz0
+    fRRz = fRRz0
+
+    ## Combined slip
+    sFL = sqrt(sFLx ** 2 + sFLy ** 2)
+    sFR = sqrt(sFRx ** 2 + sFRy ** 2)
+    sRL = sqrt(sRLx ** 2 + sRLy ** 2)
+    sRR = sqrt(sRRx ** 2 + sRRy ** 2)
+
+    # Compute tire forces
+    ## Combined friction coefficient
+    muFL = p.DFL * sin(p.CFL * arctan(p.BFL * sFL))
+    muFR = p.DFR * sin(p.CFR * arctan(p.BFR * sFR))
+    muRL = p.DRL * sin(p.CRL * arctan(p.BRL * sRL))
+    muRR = p.DRR * sin(p.CRR * arctan(p.BRR * sRR))
+
+    ## Lateral Friction coefficient
+    if sFL != 0:
+        muFLy = sFLy * muFL / sFL
+    else:
+        muFLy = p.DFL * sin(p.CFL * arctan(p.BFL * sFLy))
+
+    if sFR != 0:
+        muFRy = sFRy * muFR / sFR
+    else:
+        muFRy = p.DFR * sin(p.CFR * arctan(p.BFR * sFRy))
+
+    if sRL != 0:
+        muRLy = sRLy * muRL / sRL
+    else:
+        muRLy = p.DRL * sin(p.CRL * arctan(p.BRL * sRLy))
+
+    if sRR != 0:
+        muRRy = sRRy * muRR / sRR
+    else:
+        muRRy = p.DRR * sin(p.CRR * arctan(p.BRR * sRRy))
+
+    ## Compute lateral forces
+    fFLyt = muFLy * fFLz
+    fFRyt = muFRy * fFRz
+    fRLyt = muRLy * fRLz
+    fRRyt = muRRy * fRRz
+
+    ## Rotate to obtain forces in the chassis frame
+    fFLy = + fFLyt * cos(deltaFL) + fFRyt * cos(deltaFR) # total front
+    fRLy = + fRLyt * cos(deltaRL)
+    fRRy = + fRRyt * cos(deltaRR)
+
+    return fFLy
 
 
+def simplified_tire_function(p, alpha_f):
+    fFLz0 = p.b / (p.a + p.b) * p.m * 9.81 / 2
+    Ffy = 2 * p.DFL * sin(p.CFL * np.arctan(p.BFL * alpha_f)) * fFLz0
+    return Ffy
+
+
+long_slip = [0.0] * 4
+delta = np.linspace(-7 * pi / 180, 7 * pi / 180, 1000)
+
+Fy_full = []
+Fy_simple = []
+
+for d in delta:
+    Fy_full.append(full_tire_function(p1, [d] * 4, long_slip, [d] * 4))
+    Fy_simple.append(simplified_tire_function(p1, d))
 
 plt.figure()
-plt.plot(simX[:, 0], simX[:, 1])
-plt.axis('equal')
-plt.xlabel('X')
-plt.ylabel('Y')
-
-t = np.linspace(0, Tf, N+1)
-
-plt.figure()
-plt.plot(t, simX[:, 7] * 180/np.pi)
-plt.plot(t, simX[:, 3])
-plt.plot(t, simX[:, 4])
-plt.plot(t, simX[:, 5])
-plt.legend(['delta', 'Vx', 'Vy', 'yaw rate'])
+plt.plot(delta * 180 / np.pi, Fy_full, 'r')
+plt.plot(delta * 180 / np.pi, Fy_simple, 'b')
+plt.xlabel(r'$\alpha (degrees)$')
+plt.ylabel(r'$F_y (N)$')
+plt.legend(['Normal values', 'MPC values'])
+plt.grid()
 plt.show()

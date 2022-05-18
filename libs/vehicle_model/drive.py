@@ -4,18 +4,18 @@ from libs.vehicle_model.vehicle_model import VehicleModel
 from libs.vehicle_model.vehicle_model import VehicleParameters
 from libs.controllers.controller import StanleyController, MPC
 from libs.utils.env import world
+import sys as sys
 
 ###
-# Frame rate = 0.1
-# Vehicle simulation time = 1e-3
-# Controller time = 1e-2
+# Frame rate = 0.01
+# Vehicle simulation time = 1e-4
+# Controller time = 1e-3
 # ###
 
-Veh_SIM_NUM = 100  # Number of times vehicle simulation (Simulation_resolution  = sim.dt/Veh_SIM_NUM)
+Veh_SIM_NUM = 10  # Number of times vehicle simulation (Simulation_resolution  = sim.dt/Veh_SIM_NUM)
 Control_SIM_NUM = Veh_SIM_NUM / 10
 
 param = VehicleParameters()
-
 
 class Car:
 
@@ -73,25 +73,28 @@ class Car:
         self.colour = 'black'
 
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
-        self.MPC = MPC(100, 0.1, param, self.px, self.py, self.pyaw, np.array([init_x, init_y, init_yaw,
+        self.MPC = MPC(10, 0.1, param, self.px, self.py, self.pyaw, np.array([init_x, init_y, init_yaw,
                                                                                init_vel, 0, 0, 0, 0]))
         self.uk_prev_step = np.array([0, -1 * np.pi/180])
 
-    def drive(self, frame):
+    def drive(self, frame, status_error=None):
         # Motion Planner:
         for i in range(Veh_SIM_NUM):
             ## Motion Controllers:
             if i % 10 == 0:
-                u, crosstrack, x0, xN, status = self.MPC.solve_mpc([self.x, self.y, self.yaw, self.v, self.state_dot[1], self.state_dot[7]],
-                                         self.uk_prev_step)
+                u, self.crosstrack_error, x0, xN, status = self.MPC.solve_mpc(np.array([self.x, self.y, self.yaw, self.v,
+                                                                             self.state_dot[1], self.state_dot[7]]),
+                                                                             self.uk_prev_step)
                 self.uk_prev_step = u
                 tau, delta = u
-                self.crosstrack_error = crosstrack
                 self.delta = delta
                 self.torque_vec = [0*tau] * 4
                 # print(f'Solver status: {status} \n')
                 print(f'delta: {self.delta * 180 / np.pi} \n')
                 print(f'tau: {self.torque_vec[0]} \n')
+
+                if status == 4:
+                    status_error += 1
 
                 # Filter the delta output
                 # self.x_del.append((1 - 1e-5 / (2 * 0.001)) * self.x_del[-1] + 1e-5 / (2 * 0.001) * self.delta)
@@ -112,4 +115,7 @@ class Car:
             self.DataLog[frame * Veh_SIM_NUM + i, 45 + 6:45 + 6 + 6] = xN
             self.DataLog[frame * Veh_SIM_NUM + i, 45 + 6 + 6] = status
 
+        if status_error > 10:
+            print(f'Problem is infeasible more than 10 times!!')
+            sys.exit()
         os.system('cls' if os.name == 'nt' else 'clear')

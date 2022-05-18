@@ -42,10 +42,6 @@ from libs.vehicle_model.vehicle_model import VehicleParameters
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
 import scipy.linalg
 
-
-# params = VehicleParameters()
-
-
 class StanleyController:
 
     def __init__(self, control_gain=2.5, softening_gain=1.0, yaw_rate_gain=0.0, steering_damp_gain=0.0,
@@ -232,14 +228,14 @@ class MPC:
 
         ## Dynamics
         # Slip angles for the front and rear
-        alpha_f = -delta - np.arctan((vy + lf * omega) / (vx))
-        alpha_r = np.arctan((-vy + lr * omega) / (vx))
+        alpha_f = -delta - np.arctan((vy + lf * omega) / (vx+0.0001))
+        alpha_r = np.arctan((-vy + lr * omega) / (vx+0.0001))
 
         Nf = lr / (lr + lf) * m * 9.81
         Nr = lf / (lr + lf) * m * 9.81
         # Lateral Forces
-        Ffy = 2 * Df * np.sin(Cf * np.arctan(Bf * alpha_f)) * Nf
-        Fry = 2 * Dr * np.sin(Cr * np.arctan(Br * alpha_r)) * Nr
+        Ffy = 2 * Df * np.sin(1 * Cf * np.arctan(1 * Bf * alpha_f)) * Nf
+        Fry = 2 * Dr * np.sin(1 * Cr * np.arctan(1 * Br * alpha_r)) * Nr
         # Frx = (Cm1 - Cm2 * vx) * D - Cr0 - Cr2 * vx**2
         Frx = tau / rw
 
@@ -362,8 +358,8 @@ class MPC:
         ocp.cost.Vx = Vx
 
         Vu = np.zeros((ny, nu))
-        Vu[6, 0] = 1.0 # tau
-        Vu[7, 1] = 1.0 # delta
+        Vu[6, 0] = 1.0  # tau
+        Vu[7, 1] = 1.0  # delta
         ocp.cost.Vu = Vu
 
         Vx_e = np.zeros((ny_e, nx))
@@ -390,6 +386,11 @@ class MPC:
         ocp.constraints.ubu = np.array([model.tau_max, model.delta_max])
         ocp.constraints.Jbu = np.array([[1, 0],
                                         [0, 1]])
+
+        ocp.constraints.Jbx_e = np.array([[0, 1, 0, 0, 0, 0]])
+        ocp.constraints.lbx_e = np.array([-10])
+        ocp.constraints.ubx_e = np.array([30])
+
 
         # Slack variables for state constraints
         # ocp.constraints.lsbx = np.zeros([nsbx])
@@ -418,16 +419,16 @@ class MPC:
         ocp.constraints.x0 = model.x0
 
         # set QP solver and integration
-        ocp.solver_options.tf = Tf # prediction horizon
+        ocp.solver_options.tf = Tf  # prediction horizon
         ocp.solver_options.qp_solver = 'FULL_CONDENSING_QPOASES'
-        # ocp.solver_options.qp_solver = "PARTIAL_CONDENSING_HPIPM"
-        ocp.solver_options.nlp_solver_type = "SQP"
-        # ocp.solver_options.levenberg_marquardt = 1.0
+        # ocp.solver_options.qp_solver = "FULL_CONDENSING_HPIPM"
+        ocp.solver_options.nlp_solver_type = "SQP_RTI"
+        # ocp.solver_options.levenberg_marquardt = 0.1
         ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
         ocp.solver_options.integrator_type = "ERK"
         ocp.solver_options.sim_method_num_stages = 4
         ocp.solver_options.sim_method_num_steps = 3
-        ocp.solver_options.nlp_solver_max_iter = 400
+        ocp.solver_options.nlp_solver_max_iter = 1000
         ocp.solver_options.tol = 1e-4
         # ocp.solver_options.nlp_solver_tol_comp = 1e-1
 
@@ -437,6 +438,7 @@ class MPC:
         return constraint, model, acados_solver
 
     def solve_mpc(self, current_state, uk_prev_step):
+
         """Solve MPC provided the current state, i.e., this
         function is u = h(x), which is the implicit control law of MPC.
 
@@ -450,6 +452,10 @@ class MPC:
         """
         #     # unpacking the real signals that come from the system
         x_r, y_r, yaw_r, vx_r, vy_r, omega_r = current_state
+        self.acados_solver.set(0, "lbx", current_state)
+        self.acados_solver.set(0, "ubx", current_state)
+        # self.acados_solver.set(0, 'x', current_state)
+
         target_index, _, _, _, _ = StanleyController.find_target_path_id(self.px, self.py, x_r, y_r, yaw_r, self.params)
         local_px = self.px[target_index]
         local_py = self.py[target_index]
@@ -460,11 +466,11 @@ class MPC:
 
         Q = np.diag([0, qy, qyaw, 0, 0, 0])
         R = np.eye(2)
-        R[0, 0] = 1 * 1e-3
-        R[1, 1] = 5000 * 1/(0.1 * np.pi/180) ** 2 # R_delta
+        R[0, 0] = 0 * 1e-3
+        R[1, 1] = 500 * 1/(0.1 * np.pi/180) ** 2 # R_delta
 
-        W = self.N / self.T * scipy.linalg.block_diag(Q, R)
-        Qe = np.diag([0, 1000 * qy, 1000000 * qyaw, 0, 0, 0]) / (self.N / self.T)
+        W = self.N / self.T * scipy.linalg.block_diag(Q, R)  #
+        Qe = np.diag([0, 1 * qy, 1 * qyaw, 0, 0, 0]) / (self.N / self.T)
         W_e = Qe
 
         for i in range(self.N):
@@ -486,6 +492,23 @@ class MPC:
         u0 = self.acados_solver.get(0, "u")
         xN = self.acados_solver.get(self.N, "x")
 
+        # y_error = 0
+        # yaw_error = 0
+        # delta_error = 0
+        # for i in range(self.N):
+        #     y_error += W[1, 1] * (self.acados_solver.get(i, "x")[1] - 10)
+        #     yaw_error += W[2, 2] * (self.acados_solver.get(i, "x")[2] - 10)
+        #     delta_error += W[-1, -1] * (self.acados_solver.get(i, "u")[1] - uk_prev_step[1])
+        #
+        # total_cost = self.acados_solver.get_cost()
+        # print(f'total cost: {total_cost}')
+        # print('*********************************************************')
+        # print('costs:')
+        # print(f'Y and Y_N cost: {y_error / total_cost} , {W_e[1, 1] * (xN[1] - 10) / total_cost}')
+        # print(f'Yaw and Yaw_N cost: {yaw_error / total_cost} ,  {W_e[2, 2] * xN[2] / total_cost}')
+        # print(f'Input cost: {delta_error / total_cost}')
+        # print('*********************************************************')
+
         # print(f'yr: {y_r}')
         # print(f'local_py:{local_py}')
         # print(f'local_yaw:{local_yaw}')
@@ -502,16 +525,12 @@ class MPC:
 
         # print("cost is {}".format(self.acados_solver.get_cost()))
         # print("u0 is {}".format(u0))
-        print("X0 is {}".format(x0))
+        # print("X0 is {}".format(x0))
         # print("xN is {}".format(self.acados_solver.get(self.N, "x")))
 
         # x1 = self.acados_solver.get(1, "x")  # xk1
         # print(f'x1 = {x1}')
         # update initial condition
-        xnew = np.array([x_r, y_r, yaw_r, vx_r, vy_r, omega_r])
-
-        self.acados_solver.set(0, "lbx", xnew)
-        self.acados_solver.set(0, "ubx", xnew)
         # self.initial_conditions = x0
 
         return [u0, crosstrack, x0, xN, status]
