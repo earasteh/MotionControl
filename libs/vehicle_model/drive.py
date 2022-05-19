@@ -6,12 +6,12 @@ from libs.controllers.controller import StanleyController, MPC
 from libs.utils.env import world
 
 ###
-# Frame rate = 0.1
-# Vehicle simulation time = 1e-3
-# Controller time = 1e-2
+# Frame rate = 0.01
+# Vehicle simulation time = 1e-4
+# Controller time = 1e-3
 # ###
 
-Veh_SIM_NUM = 100  # Number of times vehicle simulation (Simulation_resolution  = sim.dt/Veh_SIM_NUM)
+Veh_SIM_NUM = 10  # Number of times vehicle simulation (Simulation_resolution  = sim.dt/Veh_SIM_NUM)
 Control_SIM_NUM = Veh_SIM_NUM / 10
 
 param = VehicleParameters()
@@ -73,7 +73,7 @@ class Car:
         self.colour = 'black'
 
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
-        self.MPC = MPC(50, 0.01, param, self.px, self.py, self.pyaw, np.array([init_x, init_y, init_yaw,
+        self.MPC = MPC(100, 0.1, param, self.px, self.py, self.pyaw, np.array([init_x, init_y, init_yaw,
                                                                                init_vel, 0, 0, 0, 0]))
         self.uk_prev_step = np.array([0, 0])
 

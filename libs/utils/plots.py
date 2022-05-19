@@ -251,16 +251,27 @@ def plot_results(DataLog_pd, WhichPlots, figsize_input=None):
         # 'x0-delta'
         plt.figure(figsize=figsize_input)
         fig_name = 'MPC-x0'
+        plt.subplot(2, 1, 1)
         plt.title(fig_name)
         plt.plot(DataLog_pd['time'], DataLog_pd['x0-x'])
         plt.plot(DataLog_pd['time'], DataLog_pd['x0-y'])
         plt.plot(DataLog_pd['time'], DataLog_pd['x0-yaw'])
+        plt.plot(DataLog_pd['time'], DataLog_pd['x0-vx'])
+        plt.plot(DataLog_pd['time'], DataLog_pd['x0-vy'])
+        plt.plot(DataLog_pd['time'], DataLog_pd['x0-omega'])
+        plt.grid()
+        plt.legend(['x', 'y', 'yaw', 'vx', 'vy', 'omega'])
+        plt.xlabel('Time (Sec.)')
+        plt.ylabel('MPC - x0 (initial state at each iteration)')
+
+        plt.subplot(2, 1, 2)
         plt.plot(DataLog_pd['time'], DataLog_pd['x0-delta'])
         plt.plot(DataLog_pd['time'], DataLog_pd['x0-tau'])
         plt.grid()
+        plt.legend(['delta', 'tau'])
         plt.xlabel('Time (Sec.)')
         plt.ylabel('MPC - x0 (initial state at each iteration)')
-        plt.legend(['x', 'y', 'yaw', 'delta', 'tau'])
+
         plt.savefig('results/' + fig_name + '.png', dpi=150)
 
     plt.show()

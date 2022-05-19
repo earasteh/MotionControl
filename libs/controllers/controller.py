@@ -236,8 +236,8 @@ class MPC:
 
         ## Dynamics
         # Slip angles for the front and rear
-        alpha_f = -delta - np.arctan((vy + lf * omega) / (vx + 0.0001))
-        alpha_r = np.arctan((-vy + lr * omega) / (vx + 0.0001))
+        alpha_f = -delta - np.arctan((vy + lf * omega) / (vx + 0.01))
+        alpha_r = np.arctan((-vy + lr * omega) / (vx + 0.01))
 
         Nf = lr / (lr + lf) * m * 9.81
         Nr = lf / (lr + lf) * m * 9.81
@@ -245,7 +245,7 @@ class MPC:
         Ffy = 2 * Df * np.sin(Cf * np.arctan(Bf * alpha_f)) * Nf
         Fry = 2 * Dr * np.sin(Cr * np.arctan(Br * alpha_r)) * Nr
         # Frx = (Cm1 - Cm2 * vx) * D - Cr0 - Cr2 * vx**2
-        Frx = tau / rw
+        Frx = 1 * tau / rw
 
         dx = vx * np.cos(yaw) - vy * np.sin(yaw)
         dy = vx * np.sin(yaw) + vy * np.cos(yaw)
@@ -270,10 +270,10 @@ class MPC:
         model.tau_min = -1000
         model.tau_max = +1000
         # input bounds
-        model.ddelta_min = -0.1 * np.pi / 180 * self.N / self.T  # minimum change rate of stering angle [rad/s]
-        model.ddelta_max = +0.1 * np.pi / 180 * self.N / self.T  # maximum change rate of steering angle [rad/s]
-        model.dtau_min = -100  # -10.0  # minimum torque change rate
-        model.dtau_max = 100  # 10.0  # maximum torque change rate
+        model.ddelta_min = -80 * np.pi / 180 #* self.N / self.T  # minimum change rate of stering angle [rad/s]
+        model.ddelta_max = +80 * np.pi / 180 #* self.N / self.T  # maximum change rate of steering angle [rad/s]
+        model.dtau_min = -50  # -10.0  # minimum torque change rate
+        model.dtau_max = 50  # 10.0  # maximum torque change rate
         # nonlinear constraint
         constraint.alat_min = -80  # maximum lateral force [m/s^2]
         constraint.alat_max = 80  # maximum lateral force [m/s^1]
@@ -281,8 +281,8 @@ class MPC:
         constraint.along_max = 40  # maximum lateral force [m/s^2]
 
         # Define initial conditions
-        model.x0 = np.array([0, 15, 0, 10, 0, 0, 0, 0])
-        # model.x0 = initial_condition
+        # model.x0 = np.array([0, 10, 0, 10, 0, 0, 0, 0])
+        model.x0 = initial_condition
         # define constraints struct
         # constraint.alat = ca.Function("a_lat", [state, sym_u], [a_lat])
         constraint.expr = ca.vertcat(a_long, a_lat, tau, delta)
@@ -380,7 +380,7 @@ class MPC:
         # ocp.cost.Zu = 1 * np.ones((ns,))
 
         # set intial references
-        ocp.cost.yref = np.array([0, 10, 0, 10, 0, 0, 0, 0, 0, 0])
+        ocp.cost.yref = np.array([0, 10, 0, 10, 0, 0, 0, 0, 0, -1*np.pi/180])
         ocp.cost.yref_e = np.array([0, 10, 0, 10, 0, 0, 0, 0])
 
         # setting constraints
@@ -392,6 +392,11 @@ class MPC:
         ocp.constraints.ubu = np.array([model.dtau_max, model.ddelta_max])
         ocp.constraints.Jbu = np.array([[1, 0],
                                         [0, 1]])
+
+        ocp.constraints.Jbx_e = np.array([[0, 1, 0, 0, 0, 0, 0, 0],
+                                         [0, 0, 1, 0, 0, 0, 0, 0]])
+        ocp.constraints.lbx_e = np.array([0, -30 * np.pi/180])
+        ocp.constraints.ubx_e = np.array([18, +30 * np.pi / 180])
 
         # Slack variables for state constraints
         # ocp.constraints.lsbx = np.zeros([nsbx])
@@ -427,13 +432,13 @@ class MPC:
         ocp.solver_options.tf = Tf
         # ocp.solver_options.qp_solver = 'FULL_CONDENSING_QPOASES'
         ocp.solver_options.qp_solver = "PARTIAL_CONDENSING_HPIPM"
-        ocp.solver_options.nlp_solver_type = "SQP"
-        # ocp.solver_options.levenberg_marquardt = 1.0
+        ocp.solver_options.nlp_solver_type = "SQP_RTI"
+        ocp.solver_options.levenberg_marquardt = 1000.0
         ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
         ocp.solver_options.integrator_type = "ERK"
         ocp.solver_options.sim_method_num_stages = 4
         ocp.solver_options.sim_method_num_steps = 3
-        ocp.solver_options.nlp_solver_max_iter = 400
+        ocp.solver_options.nlp_solver_max_iter = 1000
         ocp.solver_options.tol = 1e-4
         # ocp.solver_options.nlp_solver_tol_comp = 1e-1
 
@@ -456,28 +461,33 @@ class MPC:
         """
         #     # unpacking the real signals that come from the system
         x_r, y_r, yaw_r, vx_r, vy_r, omega_r = current_state
+
+        self.acados_solver.set(0, "lbx", np.array([x_r, y_r, yaw_r, vx_r, vy_r, omega_r, uk_prev_step[0], uk_prev_step[1]]))
+        self.acados_solver.set(0, "ubx", np.array([x_r, y_r, yaw_r, vx_r, vy_r, omega_r, uk_prev_step[0], uk_prev_step[1]]))
+        self.acados_solver.set(0, "x", np.array([x_r, y_r, yaw_r, vx_r, vy_r, omega_r, uk_prev_step[0], uk_prev_step[1]]))
+
         target_index, _, _, _, _ = StanleyController.find_target_path_id(self.px, self.py, x_r, y_r, yaw_r, self.params)
         local_px = self.px[target_index]
         local_py = self.py[target_index]
         local_yaw = self.pyaw[target_index]
 
-        qy = 1 / 0.001 ** 2
-        qyaw = 1 / (0.01 * np.pi / 180) ** 2
+        qy = 100 * 1 / 0.01 ** 2
+        qyaw = 1 / (0.1 * np.pi / 180) ** 2
 
         Q = np.diag([0, qy, qyaw, 0, 0, 0, 0, 0])
         R = np.eye(2)
         R[0, 0] = 0 * 1e-3
-        R[1, 1] = 0 * 1/(0.1 * np.pi/180) ** 2
+        R[1, 1] = 100 * 1/(0.01 * np.pi/180) ** 2
         W = self.N / self.T * scipy.linalg.block_diag(Q, R)
-        Qe = np.diag([0, 1000 * qy, 10 * qyaw, 0, 0, 0, 0, 0]) / (self.N / self.T)
+        Qe = np.diag([0, 1 * qy, 1 * qyaw, 0, 0, 0, 0, 0]) / (self.N / self.T)
         W_e = Qe
 
         for i in range(self.N):
             self.acados_solver.cost_set(i, 'W', W)
-            yref = np.array([0, local_py, 0 * local_yaw, 0.0, 0, 0, 0, 0, 0, 0])
+            yref = np.array([0, 10, 0 * local_yaw, 10.0, 0, 0, 0, 0, 0, 0])
             self.acados_solver.set(i, "yref", yref)
         self.acados_solver.cost_set(self.N, 'W', W_e)
-        yref_N = np.array([0, local_py, 0 * local_yaw, 0.0, 0, 0, 0, 0])
+        yref_N = np.array([0, 10, 0 * local_yaw, 10.0, 0, 0, 0, 0])
         self.acados_solver.set(self.N, "yref", yref_N)
 
         # print(f'yref = {yref}')
@@ -510,14 +520,9 @@ class MPC:
         # print("u0 is {}".format(u0))
         # print("X0 is {}".format(x0))
         # print("xN is {}".format(self.acados_solver.get(self.N, "x")))
-
-        x1 = self.acados_solver.get(1, "x")  # xk1
         # print(f'x1 = {x1}')
         # update initial condition
-        # xnew = np.array([x_r, y_r, yaw_r, vx_r, vy_r, omega_r, x1[6], x1[7]])
 
-        self.acados_solver.set(0, "lbx", x1)
-        self.acados_solver.set(0, "ubx", x1)
         # self.initial_conditions = x0
 
         return [u, crosstrack, x0, xN, status]

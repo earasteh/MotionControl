@@ -360,11 +360,11 @@ class VehicleModel:
         Br = param.BRL
         Cr = param.CRL
         Dr = param.DRL
-        # Longitudinal parameters
-        Cm1 = 0.287
-        Cm2 = 0.0545
-        Cr0 = 0.0518
-        Cr2 = 0.00035
+        # # Longitudinal parameters
+        # Cm1 = 0.287
+        # Cm2 = 0.0545
+        # Cr0 = 0.0518
+        # Cr2 = 0.00035
 
         # states
         x = states[0]
@@ -379,8 +379,8 @@ class VehicleModel:
         # v_theta = u[2]
 
         # Slip angles for the front and rear
-        alpha_f = -delta - np.arctan((vy + lf * omega) / (vx))
-        alpha_r = np.arctan((-vy + lr * omega) / (vx))
+        alpha_f = -delta - np.arctan((vy + lf * omega) / (vx+0.001))
+        alpha_r = np.arctan((-vy + lr * omega) / (vx+0.001))
         # alpha_f = - np.arctan((omega * lf + vy) / (vx + 0.0001)) + delta
         # alpha_r = np.arctan((omega * lr - vy) / (vx + 0.0001))
 
