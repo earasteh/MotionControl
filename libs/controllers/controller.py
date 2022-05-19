@@ -211,7 +211,7 @@ class MPCC:
         # selected_d = selected_d[0]
         selected_d = 10
 
-        qc = 50000 * 1 / 0.5 ** 2  # lateral error cost
+        qc = 90000 * 1 / 0.5 ** 2  # lateral error cost
         qyaw = 2000 * 1 / (1 * np.pi / 180) ** 2  # yaw error cost
 
         Jy = 0.
