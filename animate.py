@@ -80,7 +80,8 @@ def main():
     # anim.save('resources/animation.gif', fps=10)   #Uncomment to save the animation
     plt.show()
 
-    plot_results(data_cleaning(car.DataLog), WhichPlots=('crosstrack', 'traj', 'delta', 'MPC-flag', 'MPC-x0'))
+    plot_results(data_cleaning(car.DataLog), WhichPlots=('MPC-inputs', 'MPC-x0-states', 'crosstrack', 'traj',
+                                                         'MPC-flag'))
 
     plt.close('all')
 

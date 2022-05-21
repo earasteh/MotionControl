@@ -74,8 +74,8 @@ class Car:
 
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
         self.MPC = MPC(100, 0.1, param, self.px, self.py, self.pyaw, np.array([init_x, init_y, init_yaw,
-                                                                               init_vel, 0, 0, 0, 0]))
-        self.uk_prev_step = np.array([0, 0])
+                                                                               init_vel, 0, 0, 0, -1*np.pi/180]))
+        self.uk_prev_step = np.array([0, -1*np.pi/180])
 
     def drive(self, frame):
         # Motion Planner:
@@ -88,7 +88,7 @@ class Car:
                 tau, delta = u
                 self.crosstrack_error = crosstrack
                 self.delta = delta
-                self.torque_vec = [0*tau] * 4
+                self.torque_vec = [tau] * 4
                 # print(f'Solver status: {status} \n')
                 print(f'delta: {self.delta * 180 / np.pi} \n')
                 print(f'tau: {self.torque_vec[0]} \n')
