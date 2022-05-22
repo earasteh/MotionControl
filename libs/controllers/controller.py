@@ -265,13 +265,13 @@ class MPC:
         # model.n_max = 5  # width of the track [m]
 
         # State bounds
-        model.delta_min = -10.0 * np.pi / 180
-        model.delta_max = +10.0 * np.pi / 180
+        model.delta_min = -8.0 * np.pi / 180
+        model.delta_max = +8.0 * np.pi / 180
         model.tau_min = -1000
         model.tau_max = +1000
         # input bounds
-        model.ddelta_min = -100 * np.pi / 180 #* self.N / self.T  # minimum change rate of stering angle [rad/s]
-        model.ddelta_max = +100 * np.pi / 180 #* self.N / self.T  # maximum change rate of steering angle [rad/s]
+        model.ddelta_min = -20 * np.pi / 180 #* self.N / self.T  # minimum change rate of stering angle [rad/s]
+        model.ddelta_max = +20 * np.pi / 180 #* self.N / self.T  # maximum change rate of steering angle [rad/s]
         model.dtau_min = -100  # -10.0  # minimum torque change rate
         model.dtau_max = 100  # 10.0  # maximum torque change rate
         # nonlinear constraint
@@ -432,8 +432,8 @@ class MPC:
         ocp.solver_options.tf = Tf
         # ocp.solver_options.qp_solver = 'FULL_CONDENSING_QPOASES'
         ocp.solver_options.qp_solver = "PARTIAL_CONDENSING_HPIPM"
-        ocp.solver_options.nlp_solver_type = "SQP"
-        # ocp.solver_options.levenberg_marquardt = 0.01
+        ocp.solver_options.nlp_solver_type = "SQP_RTI"
+        # ocp.solver_options.levenberg_marquardt = 0.00001
         ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
         ocp.solver_options.integrator_type = "ERK"
         ocp.solver_options.sim_method_num_stages = 4
@@ -471,16 +471,16 @@ class MPC:
         local_py = self.py[target_index]
         local_yaw = self.pyaw[target_index]
 
-        qy = 100 * 1 / 0.01 ** 2
-        qyaw = 40 * 1 / (0.1 * np.pi / 180) ** 2
-        q_tau = 40 * 1/(0.1 * np.pi/180) ** 2
+        qy = 150 * 1 / 0.01 ** 2
+        qyaw = 100 * 1 / (0.1 * np.pi / 180) ** 2
+        qDelta = 100 * 1/(0.1 * np.pi/180) ** 2
 
-        Q = np.diag([0, qy, qyaw, 100, 0, 0, 0, q_tau])
+        Q = np.diag([0, qy, qyaw, 100, 0, 0, 0, qDelta])
         R = np.eye(2)
         R[0, 0] = 0 * 1e-3
-        R[1, 1] = 2000 * 1/(0.01 * np.pi/180) ** 2
+        R[1, 1] = 6000 * 1/(0.01 * np.pi/180) ** 2
         W = scipy.linalg.block_diag(Q, R) # self.N / self.T *
-        Qe = np.diag([0, 10 * qy, 10 * qyaw, 10, 0, 0, 0, 0]) #/ (self.N / self.T)
+        Qe = np.diag([0, 40 * qy, 100 * qyaw, 10, 0, 0, 0, 0]) #/ (self.N / self.T)
         W_e = Qe
 
         for i in range(self.N):
