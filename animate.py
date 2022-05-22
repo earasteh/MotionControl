@@ -11,7 +11,7 @@ class Simulation:
 
     def __init__(self):
         fps = 100.0
-        t_final = 10.0
+        t_final = 20.0
         self.frame_dt = 1 / fps
         self.veh_dt = self.frame_dt / Veh_SIM_NUM
         self.controller_dt = self.frame_dt / Control_SIM_NUM
@@ -24,7 +24,7 @@ def main():
     sim = Simulation()
     path = world.path
 
-    car = Car(path.px[0], path.py[0] + 5, path.pyaw[0], path.px, path.py, path.pyaw, path.s, sim.veh_dt)
+    car = Car(path.px[1700], path.py[1700], path.pyaw[1700], path.px, path.py, path.pyaw, path.s, sim.veh_dt)
     desc = Description(car.overall_length, car.overall_width, car.rear_overhang, car.tyre_diameter, car.tyre_width,
                        car.axle_track, car.wheelbase)
 

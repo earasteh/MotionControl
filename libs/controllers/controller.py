@@ -485,10 +485,13 @@ class MPC:
 
         for i in range(self.N):
             self.acados_solver.cost_set(i, 'W', W)
-            yref = np.array([0, 10, 0 * local_yaw, 10.0, 0, 0, 0, 0, 0, 0])
+            yref = np.array([0, local_py, local_yaw, 10.0, 0, 0, 0, 0, 0, 0])
             self.acados_solver.set(i, "yref", yref)
         self.acados_solver.cost_set(self.N, 'W', W_e)
-        yref_N = np.array([0, 10, 0 * local_yaw, 10.0, 0, 0, 0, 0])
+        yref_N = np.array([0, local_py, local_yaw, 10.0, 0, 0, 0, 0])
+
+        self.acados_solver.constraints_set(self.N, 'lbx', np.array([local_py - 10, local_yaw - 60 * np.pi/180]))
+        self.acados_solver.constraints_set(self.N, 'ubx', np.array([local_py + 10, local_yaw + 60 * np.pi / 180]))
         self.acados_solver.set(self.N, "yref", yref_N)
 
         # print(f'yref = {yref}')
