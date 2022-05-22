@@ -36,104 +36,34 @@
 
 import numpy as np
 import casadi as ca
-from libs.utils.normalise_angle import normalise_angle
-import matplotlib.pyplot as plt
-from libs.vehicle_model.vehicle_model import VehicleParameters
 from acados_template import AcadosOcp, AcadosOcpSolver, AcadosModel
 import scipy.linalg
 
-class StanleyController:
 
-    def __init__(self, control_gain=2.5, softening_gain=1.0, yaw_rate_gain=0.0, steering_damp_gain=0.0,
-                 max_steer=np.deg2rad(24), wheelbase=0.0, param=None,
-                 waypoints=None):
-        """
-        Stanley Controller
+def find_target_path_id(px, py, x, y, yaw, param):
+    """
+    Finds the index of the closest point on the path
+    :param px:
+    :param py:
+    :param x:
+    :param y:
+    :param yaw:
+    :param param:
+    :return:
+    """
+    L = param.L
 
-        At initialisation
-        :param control_gain:                (float) time constant [1/s]
-        :param softening_gain:              (float) softening gain [m/s]
-        :param yaw_rate_gain:               (float) yaw rate gain [rad]
-        :param steering_damp_gain:          (float) steering damp gain
-        :param max_steer:                   (float) vehicle's steering limits [rad]
-        :param wheelbase:                   (float) vehicle's wheelbase [m]
-        :param path_x:                      (numpy.ndarray) list of x-coordinates along the path
-        :param path_y:                      (numpy.ndarray) list of y-coordinates along the path
-        :param path_yaw:                    (numpy.ndarray) list of discrete yaw values along the path
-        :param dt:                          (float) discrete time period [s]
+    # Calculate position of the front axle
+    fx = x + L * np.cos(yaw)
+    fy = y + L * np.sin(yaw)
 
-        At every time step
-        :param x:                           (float) vehicle's x-coordinate [m]
-        :param y:                           (float) vehicle's y-coordinate [m]
-        :param yaw:                         (float) vehicle's heading [rad]
-        :param target_velocity:             (float) vehicle's velocity [m/s]
-        :param steering_angle:              (float) vehicle's steering angle [rad]
+    dx = fx - px  # Find the x-axis of the front axle relative to the path
+    dy = fy - py  # Find the y-axis of the front axle relative to the path
 
-        :return limited_steering_angle:     (float) steering angle after imposing steering limits [rad]
-        :return target_index:               (int) closest path index
-        :return crosstrack_error:           (float) distance from closest path index [m]
-        """
+    d = np.hypot(dx, dy)  # Find the distance from the front axle to the path
+    target_index = np.argmin(d)  # Find the shortest distance in the array
 
-        self.k = control_gain
-        self.k_soft = softening_gain
-        self.k_yaw_rate = yaw_rate_gain
-        self.k_damp_steer = steering_damp_gain
-        self.max_steer = max_steer
-        self.L = wheelbase
-
-        self._waypoints = waypoints
-        self._lookahead_distance = 5.0
-        self.cross_track_deadband = 0.01
-
-        self.px = waypoints[0][:]
-        self.py = waypoints[1][:]
-        self.pyaw = waypoints[2][:]
-        self.params = param  # system parameters
-
-    def update_waypoints(self):
-        local_waypoints = self._waypoints
-
-    @staticmethod
-    def find_target_path_id(px, py, x, y, yaw, param):
-        L = param.L
-
-        # Calculate position of the front axle
-        fx = x + L * np.cos(yaw)
-        fy = y + L * np.sin(yaw)
-
-        dx = fx - px  # Find the x-axis of the front axle relative to the path
-        dy = fy - py  # Find the y-axis of the front axle relative to the path
-
-        d = np.hypot(dx, dy)  # Find the distance from the front axle to the path
-        target_index = np.argmin(d)  # Find the shortest distance in the array
-
-        return target_index, dx[target_index], dy[target_index], d[target_index], d
-
-    def stanley_control(self, x, y, yaw, current_velocity):
-        """
-        :param x:
-        :param y:
-        :param yaw:
-        :param current_velocity:
-        :return: steering output, target index, crosstrack error
-        """
-        target_index, dx, dy, absolute_error, _ = self.find_target_path_id(self.px, self.py, x, y, yaw, self.params)
-        yaw_error = normalise_angle(self.pyaw[target_index] - yaw)
-        # calculate cross-track error
-        front_axle_vector = [np.sin(yaw), -np.cos(yaw)]
-        nearest_path_vector = [dx, dy]
-        crosstrack_error = np.sign(np.dot(nearest_path_vector, front_axle_vector)) * absolute_error
-        crosstrack_steering_error = np.arctan2((self.k * crosstrack_error), (self.k_soft + current_velocity))
-
-        desired_steering_angle = yaw_error + crosstrack_steering_error
-        # Constrains steering angle to the vehicle limits
-        limited_steering_angle = np.clip(desired_steering_angle, -self.max_steer, self.max_steer)
-
-        return limited_steering_angle, target_index, crosstrack_error
-
-    @property
-    def waypoints(self):
-        return self._waypoints
+    return target_index, dx[target_index], dy[target_index], d[target_index], d
 
 
 class MPC:
@@ -164,6 +94,7 @@ class MPC:
 
         Returns:
             array-like: dx/dt
+            :param initial_condition:
             :param us:
             :param xs:
             :param states:
@@ -189,12 +120,6 @@ class MPC:
         Br = param.BRL
         Cr = param.CRL
         Dr = param.DRL
-        # Longitudinal parameters
-        # Cm1 = 0.287
-        # Cm2 = 0.0545
-        # Cr0 = 0.0518
-        # Cr2 = 0.00035
-
         # states
         x = ca.SX.sym('x')
         y = ca.SX.sym('y')
@@ -220,30 +145,29 @@ class MPC:
         omega_dot = ca.SX.sym('omega_dot')
         state_dot = ca.vertcat(x_dot, y_dot, yaw_dot, vx_dot, vy_dot, omega_dot)
 
-        # algebraic variables
-        z = ca.vertcat([])
-
-        # parameters
-        p = ca.vertcat([])
+        # # algebraic variables
+        # z = ca.vertcat([])
+        #
+        # # parameters
+        # p = ca.vertcat([])
 
         ## Dynamics
         # Slip angles for the front and rear
-        alpha_f = -delta - np.arctan((vy + lf * omega) / (vx+0.0001))
-        alpha_r = np.arctan((-vy + lr * omega) / (vx+0.0001))
+        alpha_f = delta - np.arctan((vy + lf * omega) / (vx + 0.001))
+        alpha_r = np.arctan((-vy + lr * omega) / (vx + 0.001))
 
         Nf = lr / (lr + lf) * m * 9.81
         Nr = lf / (lr + lf) * m * 9.81
         # Lateral Forces
-        Ffy = 2 * Df * np.sin(1 * Cf * np.arctan(1 * Bf * alpha_f)) * Nf
-        Fry = 2 * Dr * np.sin(1 * Cr * np.arctan(1 * Br * alpha_r)) * Nr
-        # Frx = (Cm1 - Cm2 * vx) * D - Cr0 - Cr2 * vx**2
+        Ffy = 2 * Df * np.sin(Cf * np.arctan(Bf * alpha_f)) * Nf
+        Fry = 2 * Dr * np.sin(Cr * np.arctan(Br * alpha_r)) * Nr
         Frx = tau / rw
 
         dx = vx * np.cos(yaw) - vy * np.sin(yaw)
         dy = vx * np.sin(yaw) + vy * np.cos(yaw)
         dyaw = omega
         dvx = 1 / m * (Frx - Ffy * np.sin(delta) + m * vy * omega)
-        dvy = 1 / m * (Fry - Ffy * np.cos(delta) - m * vx * omega)
+        dvy = 1 / m * (Fry + Ffy * np.cos(delta) - m * vx * omega)
         domega = 1 / Izz * (Ffy * lf * np.cos(delta) - Fry * lr)
 
         expr_f_expl = ca.vertcat(dx, dy, dyaw, dvx, dvy, domega)
@@ -252,45 +176,33 @@ class MPC:
         a_long = dvx - vy * omega
         a_lat = dvy + vx * omega
 
-        # # Model bounds
-        # model.n_min = -5  # width of the track [m]
-        # model.n_max = 5  # width of the track [m]
-
         # State bounds
-        model.delta_min = -10.0 * np.pi / 180
-        model.delta_max = +10.0 * np.pi / 180
+        model.delta_min = -8.0 * np.pi / 180
+        model.delta_max = +8.0 * np.pi / 180
         model.tau_min = -1000
         model.tau_max = +1000
-        # input bounds
-        model.ddelta_min = -0.1 * np.pi / 180 * self.N / self.T  # minimum change rate of stering angle [rad/s]
-        model.ddelta_max = +0.1 * np.pi / 180 * self.N / self.T  # maximum change rate of steering angle [rad/s]
-        model.dtau_min = -100  # -10.0  # minimum torque change rate
-        model.dtau_max = 100  # 10.0  # maximum torque change rate
+        # input rate bounds (used for du problem formulation)
+        # model.ddelta_min = -0.1 * np.pi / 180 * self.N / self.T  # minimum change rate of stering angle [rad/s]
+        # model.ddelta_max = +0.1 * np.pi / 180 * self.N / self.T  # maximum change rate of steering angle [rad/s]
+        # model.dtau_min = -100  # -10.0  # minimum torque change rate
+        # model.dtau_max = 100  # 10.0  # maximum torque change rate
         # nonlinear constraint
         constraint.alat_min = -80  # maximum lateral force [m/s^2]
         constraint.alat_max = 80  # maximum lateral force [m/s^1]
         constraint.along_min = -40  # maximum lateral force [m/s^2]
         constraint.along_max = 40  # maximum lateral force [m/s^2]
-
         # Define initial conditions
-        model.x0 = np.array([0, 15, 0, 10, 0, 0])
-        # model.x0 = initial_condition
-        # define constraints struct
-        # constraint.alat = ca.Function("a_lat", [state, sym_u], [a_lat])
-        constraint.expr = ca.vertcat(a_long, a_lat)
+        model.x0 = initial_condition
 
-        # Define model struct
-        # params = ca.types.SimpleNamespace()
+        # define constraints struct (other constraints)
+        # constraint.expr = ca.vertcat(a_long, a_lat)
 
         model.f_impl_expr = state_dot - expr_f_expl
         model.f_expl_expr = expr_f_expl
         model.x = state
         model.xdot = state_dot
         model.u = sym_u
-        model.z = z
-        model.p = p
         model.name = model_name
-        # model.params = params
         return model, constraint
 
     def acados_settings(self, Tf, N):
@@ -307,13 +219,11 @@ class MPC:
         model_ac.x = model.x
         model_ac.xdot = model.xdot
         model_ac.u = model.u
-        model_ac.z = model.z
-        model_ac.p = model.p
         model_ac.name = model.name
         ocp.model = model_ac
 
         # define constraint
-        model_ac.con_h_expr = constraint.expr
+        # model_ac.con_h_expr = constraint.expr
 
         # dimensions
         nx = model.x.size()[0]
@@ -322,8 +232,8 @@ class MPC:
         ny_e = nx
 
         nsbx = 1
-        nh = constraint.expr.shape[0]
-        # nh = 0
+        # nh = constraint.expr.shape[0]
+        nh = 0
         nsh = nh
         ns = nsh + nsbx
 
@@ -331,16 +241,12 @@ class MPC:
         ocp.dims.N = N
 
         # set cost
-        # Q = np.diag([1e-1, 1e-8, 1e-8, 1e-8, 1e-3, 5e-3])
         Q = np.diag([0, 2000.0, 6000.0, 0, 0, 0])
 
         R = np.eye(nu)
         R[0, 0] = 1e-3
         R[1, 1] = 5e-3
-        # R[0, 0] = 0
-        # R[1, 1] = 0
 
-        # Qe = np.diag([5e0, 1e1, 1e-8, 1e-8, 5e-3, 2e-3])
         Qe = np.diag([0, 20000.0, 6000.0, 0, 0, 0])
 
         ocp.cost.cost_type = "LINEAR_LS"
@@ -351,7 +257,6 @@ class MPC:
         ocp.cost.W_e = Qe / unscale
 
         Vx = np.zeros((ny, nx))
-        # Vx[:nx, :nx] = np.eye(nx)
         Vx[1, 1] = 1  # y
         Vx[2, 2] = 1  # yaw
         Vx[3, 3] = 0  # forward velocity
@@ -368,6 +273,7 @@ class MPC:
         Vx_e[3, 3] = 0  # forward velocity
         ocp.cost.Vx_e = Vx_e
 
+        # slack variables
         # ocp.cost.zl = 100 * np.ones((ns,))
         # ocp.cost.zu = 100 * np.ones((ns,))
         # ocp.cost.Zl = 1 * np.ones((ns,))
@@ -377,53 +283,51 @@ class MPC:
         ocp.cost.yref = np.array([0, 10, 0, 10, 0, 0, 0, 0])
         ocp.cost.yref_e = np.array([0, 10, 0, 10, 0, 0])
 
-        # setting constraints
-        # ocp.constraints.lbx = np.array([model.tau_min, model.delta_min])
-        # ocp.constraints.ubx = np.array([model.tau_max, model.delta_max])
-        # ocp.constraints.idxbx = np.array([1, 1]) #np.array([[0, 0, 0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 0, 0, 1]])
-
+        # input constraints
         ocp.constraints.lbu = np.array([model.tau_min, model.delta_min])
         ocp.constraints.ubu = np.array([model.tau_max, model.delta_max])
         ocp.constraints.Jbu = np.array([[1, 0],
                                         [0, 1]])
 
-        ocp.constraints.Jbx_e = np.array([[0, 1, 0, 0, 0, 0]])
-        ocp.constraints.lbx_e = np.array([-10])
-        ocp.constraints.ubx_e = np.array([30])
-
+        # terminal constraints
+        # ocp.constraints.Jbx_e = np.array([[0, 1, 0, 0, 0, 0],
+        #                                   [0, 0, 1, 0, 0, 0]])
+        # ocp.constraints.lbx_e = np.array([0, -80 * np.pi/180])
+        # ocp.constraints.ubx_e = np.array([20, +80 * np.pi/180])
 
         # Slack variables for state constraints
         # ocp.constraints.lsbx = np.zeros([nsbx])
         # ocp.constraints.usbx = np.zeros([nsbx])
         # ocp.constraints.idxsbx = np.array(range(nsbx))
 
-        ocp.constraints.lh = np.array(
-            [
-                constraint.along_min,
-                constraint.alat_min,
-            ]
-        )
-        ocp.constraints.uh = np.array(
-            [
-                constraint.along_max,
-                constraint.alat_max,
-            ]
-        )
+        # box constraints
+        # ocp.constraints.lh = np.array(
+        #     [
+        #         constraint.along_min,
+        #         constraint.alat_min,
+        #     ]
+        # )
+        # ocp.constraints.uh = np.array(
+        #     [
+        #         constraint.along_max,
+        #         constraint.alat_max,
+        #     ]
+        # )
 
         # Slack variables for along, alat, delta_max
         # ocp.constraints.lsh = np.zeros(nsh)
         # ocp.constraints.ush = np.zeros(nsh)
         # ocp.constraints.idxsh = np.array(range(nsh))
 
-        # set intial condition
+        # set initial condition
         ocp.constraints.x0 = model.x0
 
         # set QP solver and integration
         ocp.solver_options.tf = Tf  # prediction horizon
-        ocp.solver_options.qp_solver = 'FULL_CONDENSING_QPOASES'
-        # ocp.solver_options.qp_solver = "FULL_CONDENSING_HPIPM"
+        # ocp.solver_options.qp_solver = 'FULL_CONDENSING_QPOASES'
+        ocp.solver_options.qp_solver = "PARTIAL_CONDENSING_HPIPM"
         ocp.solver_options.nlp_solver_type = "SQP_RTI"
-        # ocp.solver_options.levenberg_marquardt = 0.1
+        # ocp.solver_options.levenberg_marquardt = 0.001
         ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
         ocp.solver_options.integrator_type = "ERK"
         ocp.solver_options.sim_method_num_stages = 4
@@ -434,6 +338,7 @@ class MPC:
 
         # create solver
         acados_solver = AcadosOcpSolver(ocp, json_file="acados_ocp.json")
+        acados_solver.options_set('warm_start_first_qp', 2)
 
         return constraint, model, acados_solver
 
@@ -454,25 +359,27 @@ class MPC:
         x_r, y_r, yaw_r, vx_r, vy_r, omega_r = current_state
         self.acados_solver.set(0, "lbx", current_state)
         self.acados_solver.set(0, "ubx", current_state)
-        # self.acados_solver.set(0, 'x', current_state)
 
-        target_index, _, _, _, _ = StanleyController.find_target_path_id(self.px, self.py, x_r, y_r, yaw_r, self.params)
+        # get the indices of the closest point on path
+        target_index, _, _, _, _ = find_target_path_id(self.px, self.py, x_r, y_r, yaw_r, self.params)
         local_px = self.px[target_index]
         local_py = self.py[target_index]
         local_yaw = self.pyaw[target_index]
 
-        qy = 10 * 1 / 0.001 ** 2
-        qyaw = 3 * 1 / (0.01 * np.pi / 180) ** 2
+        # cost parameters
+        qy = 200 * 1 / 0.001 ** 2  #cost for lateral error
+        qyaw = 10 * 1 / (0.01 * np.pi / 180) ** 2  #cost for yaw error
 
         Q = np.diag([0, qy, qyaw, 0, 0, 0])
         R = np.eye(2)
         R[0, 0] = 0 * 1e-3
-        R[1, 1] = 500 * 1/(0.1 * np.pi/180) ** 2 # R_delta
+        R[1, 1] = 5000 * 1 / (0.1 * np.pi / 180) ** 2  # R_delta (cost for delta)
 
         W = self.N / self.T * scipy.linalg.block_diag(Q, R)  #
-        Qe = np.diag([0, 1 * qy, 1 * qyaw, 0, 0, 0]) / (self.N / self.T)
+        Qe = np.diag([0, 10 * qy, 10 * qyaw, 0, 0, 0]) / (self.N / self.T)
         W_e = Qe
 
+        # Update the cost
         for i in range(self.N):
             self.acados_solver.cost_set(i, 'W', W)
             yref = np.array([0, 10, 0 * local_yaw, 10.0, 0, 0, uk_prev_step[0], uk_prev_step[1]])
@@ -480,8 +387,6 @@ class MPC:
         self.acados_solver.cost_set(self.N, 'W', W_e)
         yref_N = np.array([0, 10, 0 * local_yaw, 0.0, 0, 0])
         self.acados_solver.set(self.N, "yref", yref_N)
-
-        # print(f'yref = {yref}')
 
         # set options
         self.acados_solver.options_set('print_level', 0)
@@ -492,6 +397,7 @@ class MPC:
         u0 = self.acados_solver.get(0, "u")
         xN = self.acados_solver.get(self.N, "x")
 
+        # printing cost for each part
         # y_error = 0
         # yaw_error = 0
         # delta_error = 0
@@ -508,30 +414,18 @@ class MPC:
         # print(f'Yaw and Yaw_N cost: {yaw_error / total_cost} ,  {W_e[2, 2] * xN[2] / total_cost}')
         # print(f'Input cost: {delta_error / total_cost}')
         # print('*********************************************************')
-
-        # print(f'yr: {y_r}')
-        # print(f'local_py:{local_py}')
-        # print(f'local_yaw:{local_yaw}')
-        # print(f'x = {x0}')
-
-        # print(f'MPC {local_py - xN[1]} vs. real {local_py - y_r}')
-
-        # u = uk_prev_step + u0
+        # printing states:
+        # print("cost is {}".format(self.acados_solver.get_cost()))
+        # print("u0 is {}".format(u0))
+        # print("X0 is {}".format(x0))
+        # print("xN is {}".format(self.acados_solver.get(self.N, "x")))
 
         crosstrack = y_r - local_py
 
         if status != 0:
             print("acados returned status {}.".format(status))
 
-        # print("cost is {}".format(self.acados_solver.get_cost()))
-        # print("u0 is {}".format(u0))
-        # print("X0 is {}".format(x0))
-        # print("xN is {}".format(self.acados_solver.get(self.N, "x")))
-
-        # x1 = self.acados_solver.get(1, "x")  # xk1
-        # print(f'x1 = {x1}')
-        # update initial condition
-        # self.initial_conditions = x0
+        self.acados_solver.print_statistics()
 
         return [u0, crosstrack, x0, xN, status]
 

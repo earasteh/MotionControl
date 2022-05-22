@@ -11,7 +11,7 @@ class Simulation:
 
     def __init__(self):
         fps = 100.0
-        t_final = 3.0
+        t_final = 5.0
         self.frame_dt = 1 / fps
         self.veh_dt = self.frame_dt / Veh_SIM_NUM
         self.controller_dt = self.frame_dt / Control_SIM_NUM
@@ -80,7 +80,8 @@ def main():
     # anim.save('resources/animation.gif', fps=10)   #Uncomment to save the animation
     plt.show()
 
-    plot_results(data_cleaning(car.DataLog), WhichPlots=('crosstrack', 'traj', 'delta', 'MPC-flag', 'MPC-x0'))
+    plot_results(data_cleaning(car.DataLog), WhichPlots=('crosstrack', 'traj', 'MPC-flag',
+                                                         'MPC-x0-states', 'MPC-inputs'))
 
     plt.close('all')
 

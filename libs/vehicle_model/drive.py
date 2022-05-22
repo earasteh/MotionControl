@@ -2,7 +2,7 @@ import os
 import numpy as np
 from libs.vehicle_model.vehicle_model import VehicleModel
 from libs.vehicle_model.vehicle_model import VehicleParameters
-from libs.controllers.controller import StanleyController, MPC
+from libs.controllers.controller import MPC
 from libs.utils.env import world
 import sys as sys
 
@@ -73,8 +73,8 @@ class Car:
         self.colour = 'black'
 
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
-        self.MPC = MPC(10, 0.1, param, self.px, self.py, self.pyaw, np.array([init_x, init_y, init_yaw,
-                                                                               init_vel, 0, 0, 0, 0]))
+        self.MPC = MPC(50, 0.1, param, self.px, self.py, self.pyaw, np.array([init_x, init_y, init_yaw,
+                                                                               init_vel, 0, 0]))
         self.uk_prev_step = np.array([0, -1 * np.pi/180])
 
     def drive(self, frame, status_error=None):
@@ -92,13 +92,6 @@ class Car:
                 # print(f'Solver status: {status} \n')
                 print(f'delta: {self.delta * 180 / np.pi} \n')
                 print(f'tau: {self.torque_vec[0]} \n')
-
-                if status == 4:
-                    status_error += 1
-
-                # Filter the delta output
-                # self.x_del.append((1 - 1e-5 / (2 * 0.001)) * self.x_del[-1] + 1e-5 / (2 * 0.001) * self.delta)
-                # self.delta = self.x_del[-1]
 
             ## Vehicle model
             self.state, self.x, self.y, self.yaw, self.v, self.state_dot, outputs, self.ax_prev, self.ay_prev = \
