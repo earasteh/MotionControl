@@ -73,7 +73,7 @@ class Car:
         self.colour = 'black'
 
         self.kbm = VehicleModel(self.wheelbase, self.max_steer, self.dt)
-        self.MPC = MPC(50, 0.1, param, self.px, self.py, self.pyaw, np.array([init_x, init_y, init_yaw,
+        self.MPC = MPC(10, 0.1, param, self.px, self.py, self.pyaw, np.array([init_x, init_y, init_yaw,
                                                                                init_vel, 0, 0]))
         self.uk_prev_step = np.array([0, -1 * np.pi/180])
 

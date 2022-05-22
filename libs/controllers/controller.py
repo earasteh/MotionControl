@@ -290,10 +290,10 @@ class MPC:
                                         [0, 1]])
 
         # terminal constraints
-        # ocp.constraints.Jbx_e = np.array([[0, 1, 0, 0, 0, 0],
-        #                                   [0, 0, 1, 0, 0, 0]])
-        # ocp.constraints.lbx_e = np.array([0, -80 * np.pi/180])
-        # ocp.constraints.ubx_e = np.array([20, +80 * np.pi/180])
+        ocp.constraints.Jbx_e = np.array([[0, 1, 0, 0, 0, 0],
+                                          [0, 0, 1, 0, 0, 0]])
+        ocp.constraints.lbx_e = np.array([0, -80 * np.pi/180])
+        ocp.constraints.ubx_e = np.array([20, +80 * np.pi/180])
 
         # Slack variables for state constraints
         # ocp.constraints.lsbx = np.zeros([nsbx])
@@ -326,13 +326,13 @@ class MPC:
         ocp.solver_options.tf = Tf  # prediction horizon
         # ocp.solver_options.qp_solver = 'FULL_CONDENSING_QPOASES'
         ocp.solver_options.qp_solver = "PARTIAL_CONDENSING_HPIPM"
-        ocp.solver_options.nlp_solver_type = "SQP_RTI"
-        # ocp.solver_options.levenberg_marquardt = 0.001
+        ocp.solver_options.nlp_solver_type = "SQP"
+        # ocp.solver_options.levenberg_marquardt = 0.0001
         ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
         ocp.solver_options.integrator_type = "ERK"
         ocp.solver_options.sim_method_num_stages = 4
         ocp.solver_options.sim_method_num_steps = 3
-        ocp.solver_options.nlp_solver_max_iter = 1000
+        ocp.solver_options.nlp_solver_max_iter = 100
         ocp.solver_options.tol = 1e-4
         # ocp.solver_options.nlp_solver_tol_comp = 1e-1
 
@@ -367,16 +367,16 @@ class MPC:
         local_yaw = self.pyaw[target_index]
 
         # cost parameters
-        qy = 200 * 1 / 0.001 ** 2  #cost for lateral error
-        qyaw = 10 * 1 / (0.01 * np.pi / 180) ** 2  #cost for yaw error
+        qy = 500 * 1 / 0.001 ** 2  #cost for lateral error
+        qyaw = 2 * 1 / (0.01 * np.pi / 180) ** 2  #cost for yaw error
 
         Q = np.diag([0, qy, qyaw, 0, 0, 0])
         R = np.eye(2)
         R[0, 0] = 0 * 1e-3
-        R[1, 1] = 5000 * 1 / (0.1 * np.pi / 180) ** 2  # R_delta (cost for delta)
+        R[1, 1] = 1000 * 1 / (0.1 * np.pi / 180) ** 2  # R_delta (cost for delta)
 
         W = self.N / self.T * scipy.linalg.block_diag(Q, R)  #
-        Qe = np.diag([0, 10 * qy, 10 * qyaw, 0, 0, 0]) / (self.N / self.T)
+        Qe = np.diag([0, 10 * qy, 30 * qyaw, 0, 0, 0]) / (self.N / self.T)
         W_e = Qe
 
         # Update the cost
