@@ -272,22 +272,20 @@ class MPC:
         # input bounds
         model.ddelta_min = -100 * np.pi / 180 #* self.N / self.T  # minimum change rate of stering angle [rad/s]
         model.ddelta_max = +100 * np.pi / 180 #* self.N / self.T  # maximum change rate of steering angle [rad/s]
-        model.dtau_min = -600  # -10.0  # minimum torque change rate
-        model.dtau_max = 600  # 10.0  # maximum torque change rate
+        model.dtau_min = -100  # -10.0  # minimum torque change rate
+        model.dtau_max = 100  # 10.0  # maximum torque change rate
         # nonlinear constraint
-        constraint.alat_min = -8  # maximum lateral force [m/s^2]
-        constraint.alat_max = 8  # maximum lateral force [m/s^1]
-        constraint.along_min = -4  # maximum lateral force [m/s^2]
-        constraint.along_max = 4  # maximum lateral force [m/s^2]
+        constraint.alat_min = -80  # maximum lateral force [m/s^2]
+        constraint.alat_max = 80  # maximum lateral force [m/s^1]
+        constraint.along_min = -40  # maximum lateral force [m/s^2]
+        constraint.along_max = 40  # maximum lateral force [m/s^2]
 
         # Define initial conditions
         # model.x0 = np.array([0, 10, 0, 10, 0, 0, 0, 0])
         model.x0 = initial_condition
         # define constraints struct
-        constraint.alat = ca.Function("a_lat", [state, sym_u], [a_lat])
-        constraint.along = ca.Function("a_lat", [state, sym_u], [a_long])
-        constraint.expr = ca.vertcat(tau, delta)
-        constraint.expr_e = ca.vertcat(a_long, a_lat)
+        # constraint.alat = ca.Function("a_lat", [state, sym_u], [a_lat])
+        constraint.expr = ca.vertcat(a_long, a_lat, tau, delta)
 
         # Define model struct
         # params = ca.types.SimpleNamespace()
@@ -324,7 +322,6 @@ class MPC:
 
         # define constraint
         model_ac.con_h_expr = constraint.expr
-        model_ac.con_h_expr_e = constraint.expr_e
 
         # dimensions
         nx = model.x.size()[0]
@@ -334,7 +331,6 @@ class MPC:
 
         nsbx = 1
         nh = constraint.expr.shape[0]
-        nh_e = constraint.expr_e.shape[0]
         # nh = 0
         nsh = nh
         ns = nsh + nsbx
@@ -343,12 +339,16 @@ class MPC:
         ocp.dims.N = N
 
         # set cost
+        # Q = np.diag([1e-1, 1e-8, 1e-8, 1e-8, 1e-3, 5e-3])
         Q = np.diag([0, 2000.0, 6000.0, 100.0, 0, 0, 0, 0])
 
         R = np.eye(nu)
         R[0, 0] = 1e-3
         R[1, 1] = 5e-3
+        # R[0, 0] = 0
+        # R[1, 1] = 0
 
+        # Qe = np.diag([5e0, 1e1, 1e-8, 1e-8, 5e-3, 2e-3])
         Qe = np.diag([0, 20000.0, 6000.0, 100.0, 0, 0, 0, 0])
 
         ocp.cost.cost_type = "LINEAR_LS"
@@ -362,7 +362,7 @@ class MPC:
         # Vx[:nx, :nx] = np.eye(nx)
         Vx[1, 1] = 1  # y
         Vx[2, 2] = 1  # yaw
-        Vx[3, 3] = 1  # forward velocity
+        Vx[3, 3] = 0  # forward velocity
         ocp.cost.Vx = Vx
 
         Vu = np.zeros((ny, nu))
@@ -394,27 +394,27 @@ class MPC:
                                         [0, 1]])
 
         ocp.constraints.Jbx_e = np.array([[0, 1, 0, 0, 0, 0, 0, 0],
-                                         [0, 0, 1, 0, 0, 0, 0, 0],
-                                          [0, 0, 0, 1, 0, 0, 0, 0]])
-        ocp.constraints.lbx_e = np.array([0, -60 * np.pi/180, 10])
-        ocp.constraints.ubx_e = np.array([20, +60 * np.pi / 180, 20])
+                                         [0, 0, 1, 0, 0, 0, 0, 0]])
+        ocp.constraints.lbx_e = np.array([0, -60 * np.pi/180])
+        ocp.constraints.ubx_e = np.array([20, +60 * np.pi / 180])
 
         # Slack variables for state constraints
         # ocp.constraints.lsbx = np.zeros([nsbx])
         # ocp.constraints.usbx = np.zeros([nsbx])
         # ocp.constraints.idxsbx = np.array(range(nsbx))
 
-        ocp.constraints.lh_e = np.array([constraint.along_min, constraint.alat_min])
-        ocp.constraints.uh_e = np.array([constraint.along_max, constraint.alat_max])
-
         ocp.constraints.lh = np.array(
             [
+                constraint.along_min,
+                constraint.alat_min,
                 model.tau_min,
                 model.delta_min,
             ]
         )
         ocp.constraints.uh = np.array(
             [
+                constraint.along_max,
+                constraint.alat_max,
                 model.tau_max,
                 model.delta_max,
             ]
@@ -473,25 +473,22 @@ class MPC:
 
         qy = 100 * 1 / 0.01 ** 2
         qyaw = 40 * 1 / (0.1 * np.pi / 180) ** 2
-        qv = 10 * 1 / 0.1 ** 2
+        q_tau = 40 * 1/(0.1 * np.pi/180) ** 2
 
-        # q_delta =
-        q_tau = 40 * 1 / (0.1 * np.pi / 180) ** 2
-
-        Q = np.diag([0, qy, qyaw, qv, 0, 0, 0, q_tau])
+        Q = np.diag([0, qy, qyaw, 100, 0, 0, 0, q_tau])
         R = np.eye(2)
-        R[0, 0] = 100 * 1/100
+        R[0, 0] = 0 * 1e-3
         R[1, 1] = 2000 * 1/(0.01 * np.pi/180) ** 2
-        W = scipy.linalg.block_diag(Q, R)
-        Qe = np.diag([0, 10 * qy, 10 * qyaw, 10 * qv, 0, 0, 0, 0])
+        W = scipy.linalg.block_diag(Q, R) # self.N / self.T *
+        Qe = np.diag([0, 10 * qy, 10 * qyaw, 10, 0, 0, 0, 0]) #/ (self.N / self.T)
         W_e = Qe
 
         for i in range(self.N):
             self.acados_solver.cost_set(i, 'W', W)
-            yref = np.array([0, local_py, local_yaw, 15.0, 0, 0, 0, 0, 0, 0])
+            yref = np.array([0, 10, 0 * local_yaw, 10.0, 0, 0, 0, 0, 0, 0])
             self.acados_solver.set(i, "yref", yref)
         self.acados_solver.cost_set(self.N, 'W', W_e)
-        yref_N = np.array([0, local_py, local_yaw, 15.0, 0, 0, 0, 0])
+        yref_N = np.array([0, 10, 0 * local_yaw, 10.0, 0, 0, 0, 0])
         self.acados_solver.set(self.N, "yref", yref_N)
 
         # print(f'yref = {yref}')
@@ -527,7 +524,7 @@ class MPC:
 
         # self.initial_conditions = x0
 
-        return [u, crosstrack, x0, xN, status, self.constraint]
+        return [u, crosstrack, x0, xN, status]
 
 
 def main():

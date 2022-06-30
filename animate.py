@@ -81,7 +81,7 @@ def main():
     plt.show()
 
     plot_results(data_cleaning(car.DataLog), WhichPlots=('MPC-inputs', 'MPC-x0-states', 'crosstrack', 'traj',
-                                                         'MPC-flag', 'MPC-accel'))
+                                                         'MPC-flag'))
 
     plt.close('all')
 

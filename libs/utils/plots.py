@@ -28,8 +28,7 @@ def data_cleaning(DataLog):
                                                    'x0-x', 'x0-y', 'x0-yaw', 'x0-vx', 'x0-vy', 'x0-omega', 'x0-tau',
                                                    'x0-delta',
                                                    'xN-x', 'xN-y', 'xN-yaw', 'xN-vx', 'xN-vy', 'xN-omega', 'xN-tau',
-                                                   'xN-delta', 'flag',
-                                                   'MPC-a-lat', 'MPC-a-long']
+                                                   'xN-delta', 'flag']
                               )
     if not os.path.exists('results'):
         os.makedirs('results')
@@ -308,22 +307,6 @@ def plot_results(DataLog_pd, WhichPlots, figsize_input=None):
             plt.grid()
             plt.xlabel('Time (Sec.)')
             plt.ylabel('$ \\tau $ (N.m)')
-
-        if 'MPC-accel' in WhichPlots:
-            plt.figure()
-            plt.subplot(2, 1, 1)
-            plt.suptitle('MPC input propagation', fontsize=16)
-            plt.plot(DataLog_pd['time'], DataLog_pd['MPC-a-lat'])
-            plt.plot(DataLog_pd['time'], DataLog_pd['flag'], color='red')
-            plt.grid()
-            plt.xlabel('Time (Sec.)')
-            plt.ylabel('Lateral Acceleration (m/s^2)')
-            plt.subplot(2, 1, 2)
-            plt.plot(DataLog_pd['time'], DataLog_pd['MPC-a-long'])
-            plt.plot(DataLog_pd['time'], DataLog_pd['flag'], color='red')
-            plt.grid()
-            plt.xlabel('Time (Sec.)')
-            plt.ylabel('Longitudinal Acceleration (m/s^2)')
 
         plt.savefig('results/' + fig_name + '.png', dpi=150)
 

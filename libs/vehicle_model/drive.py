@@ -21,7 +21,7 @@ class Car:
 
     def __init__(self, init_x, init_y, init_yaw, px, py, pyaw, ps, dt):
         # Variable to log all the data
-        self.DataLog = np.zeros((Veh_SIM_NUM * 4000, 45 + 8 + 8 + 1 + 2))
+        self.DataLog = np.zeros((Veh_SIM_NUM * 4000, 45 + 8 + 8 + 1))
         # Model parameters
         init_vel = 10.0
         self.x = init_x
@@ -82,16 +82,13 @@ class Car:
         for i in range(Veh_SIM_NUM):
             ## Motion Controllers:
             if i % 10 == 0:
-                u, crosstrack, x0, xN, status, constraint = self.MPC.solve_mpc([self.x, self.y, self.yaw,
-                                                                                self.v, self.state_dot[1],
-                                                                                self.state_dot[7]], self.uk_prev_step)
-                # print(f'alat constraints = {constraint.alat(xN, u)}')
-                # print(f'along constraints = {constraint.along(xN, u)}')
+                u, crosstrack, x0, xN, status = self.MPC.solve_mpc([self.x, self.y, self.yaw, self.v, self.state_dot[1], self.state_dot[7]],
+                                         self.uk_prev_step)
                 self.uk_prev_step = u
                 tau, delta = u
                 self.crosstrack_error = crosstrack
                 self.delta = delta
-                self.torque_vec = [tau] * 4
+                self.torque_vec = [0*tau] * 4
                 # print(f'Solver status: {status} \n')
                 print(f'delta: {self.delta * 180 / np.pi} \n')
                 print(f'tau: {self.torque_vec[0]} \n')
@@ -114,7 +111,5 @@ class Car:
             self.DataLog[frame * Veh_SIM_NUM + i, 45:45 + 8] = x0
             self.DataLog[frame * Veh_SIM_NUM + i, 45 + 8:45 + 8 + 8] = xN
             self.DataLog[frame * Veh_SIM_NUM + i, 45 + 8 + 8] = status
-            self.DataLog[frame * Veh_SIM_NUM + i, 45 + 8 + 8 + 1] = constraint.alat(xN, u)
-            self.DataLog[frame * Veh_SIM_NUM + i, 45 + 8 + 8 + 2] = constraint.along(xN, u)
 
         os.system('cls' if os.name == 'nt' else 'clear')
