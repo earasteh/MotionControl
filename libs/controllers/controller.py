@@ -270,13 +270,13 @@ class MPC:
         model.tau_min = -1000
         model.tau_max = +1000
         # input bounds
-        model.ddelta_min = -100 * np.pi / 180 #* self.N / self.T  # minimum change rate of stering angle [rad/s]
-        model.ddelta_max = +100 * np.pi / 180 #* self.N / self.T  # maximum change rate of steering angle [rad/s]
+        model.ddelta_min = -100 * np.pi / 180  # * self.N / self.T  # minimum change rate of stering angle [rad/s]
+        model.ddelta_max = +100 * np.pi / 180  # * self.N / self.T  # maximum change rate of steering angle [rad/s]
         model.dtau_min = -100  # -10.0  # minimum torque change rate
         model.dtau_max = 100  # 10.0  # maximum torque change rate
         # nonlinear constraint
-        constraint.alat_min = -80  # maximum lateral force [m/s^2]
-        constraint.alat_max = 80  # maximum lateral force [m/s^1]
+        constraint.alat_min = -25  # maximum lateral force [m/s^2]
+        constraint.alat_max = 25  # maximum lateral force [m/s^1]
         constraint.along_min = -40  # maximum lateral force [m/s^2]
         constraint.along_max = 40  # maximum lateral force [m/s^2]
 
@@ -380,7 +380,7 @@ class MPC:
         # ocp.cost.Zu = 1 * np.ones((ns,))
 
         # set intial references
-        ocp.cost.yref = np.array([0, 10, 0, 10, 0, 0, 0, 0, 0, -1*np.pi/180])
+        ocp.cost.yref = np.array([0, 10, 0, 10, 0, 0, 0, 0, 0, -1 * np.pi / 180])
         ocp.cost.yref_e = np.array([0, 10, 0, 10, 0, 0, 0, 0])
 
         # setting constraints
@@ -394,8 +394,8 @@ class MPC:
                                         [0, 1]])
 
         ocp.constraints.Jbx_e = np.array([[0, 1, 0, 0, 0, 0, 0, 0],
-                                         [0, 0, 1, 0, 0, 0, 0, 0]])
-        ocp.constraints.lbx_e = np.array([0, -60 * np.pi/180])
+                                          [0, 0, 1, 0, 0, 0, 0, 0]])
+        ocp.constraints.lbx_e = np.array([0, -60 * np.pi / 180])
         ocp.constraints.ubx_e = np.array([20, +60 * np.pi / 180])
 
         # Slack variables for state constraints
@@ -463,8 +463,10 @@ class MPC:
         #     # unpacking the real signals that come from the system
         x_r, y_r, yaw_r, vx_r, vy_r, omega_r = current_state
 
-        self.acados_solver.set(0, "lbx", np.array([x_r, y_r, yaw_r, vx_r, vy_r, omega_r, uk_prev_step[0], uk_prev_step[1]]))
-        self.acados_solver.set(0, "ubx", np.array([x_r, y_r, yaw_r, vx_r, vy_r, omega_r, uk_prev_step[0], uk_prev_step[1]]))
+        self.acados_solver.set(0, "lbx",
+                               np.array([x_r, y_r, yaw_r, vx_r, vy_r, omega_r, uk_prev_step[0], uk_prev_step[1]]))
+        self.acados_solver.set(0, "ubx",
+                               np.array([x_r, y_r, yaw_r, vx_r, vy_r, omega_r, uk_prev_step[0], uk_prev_step[1]]))
 
         target_index, _, _, _, _ = StanleyController.find_target_path_id(self.px, self.py, x_r, y_r, yaw_r, self.params)
         local_px = self.px[target_index]
@@ -473,23 +475,28 @@ class MPC:
 
         qy = 100 * 1 / 0.01 ** 2
         qyaw = 40 * 1 / (0.1 * np.pi / 180) ** 2
-        q_tau = 40 * 1/(0.1 * np.pi/180) ** 2
+        q_tau = 40 * 1 / (0.1 * np.pi / 180) ** 2
 
         Q = np.diag([0, qy, qyaw, 100, 0, 0, 0, q_tau])
         R = np.eye(2)
         R[0, 0] = 0 * 1e-3
-        R[1, 1] = 2000 * 1/(0.01 * np.pi/180) ** 2
-        W = scipy.linalg.block_diag(Q, R) # self.N / self.T *
-        Qe = np.diag([0, 10 * qy, 10 * qyaw, 10, 0, 0, 0, 0]) #/ (self.N / self.T)
+        R[1, 1] = 2000 * 1 / (0.01 * np.pi / 180) ** 2
+        W = scipy.linalg.block_diag(Q, R)  # self.N / self.T *
+        Qe = np.diag([0, 10 * qy, 10 * qyaw, 10, 0, 0, 0, 0])  # / (self.N / self.T)
         W_e = Qe
 
         for i in range(self.N):
             self.acados_solver.cost_set(i, 'W', W)
-            yref = np.array([0, 10, 0 * local_yaw, 10.0, 0, 0, 0, 0, 0, 0])
+            yref = np.array([0, local_py, local_yaw, 10.0, 0, 0, 0, 0, 0, 0])
             self.acados_solver.set(i, "yref", yref)
         self.acados_solver.cost_set(self.N, 'W', W_e)
-        yref_N = np.array([0, 10, 0 * local_yaw, 10.0, 0, 0, 0, 0])
+        yref_N = np.array([0, local_py, local_yaw, 10.0, 0, 0, 0, 0])
         self.acados_solver.set(self.N, "yref", yref_N)
+
+        self.acados_solver.constraints_set(self.N, 'lbx',
+                                           np.array([local_py - 10, local_yaw - 60 / 180 * np.pi]))
+        self.acados_solver.constraints_set(self.N, 'ubx',
+                                           np.array([local_py + 10, local_yaw + 60 / 180 * np.pi]))
 
         # print(f'yref = {yref}')
 

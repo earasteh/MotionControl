@@ -52,9 +52,9 @@
         ],
         "lbx": [],
         "lbx_0": [
-            0.0,
-            15.0,
-            0.0,
+            100.0,
+            10.0,
+            0.0003521877580894905,
             10.0,
             0.0,
             0.0,
@@ -69,7 +69,7 @@
         "lg_e": [],
         "lh": [
             -40.0,
-            -80.0,
+            -25.0,
             -1000.0,
             -0.17453292519943295
         ],
@@ -91,9 +91,9 @@
         ],
         "ubx": [],
         "ubx_0": [
-            0.0,
-            15.0,
-            0.0,
+            100.0,
+            10.0,
+            0.0003521877580894905,
             10.0,
             0.0,
             0.0,
@@ -108,7 +108,7 @@
         "ug_e": [],
         "uh": [
             40.0,
-            80.0,
+            25.0,
             1000.0,
             0.17453292519943295
         ],
@@ -979,7 +979,7 @@
         "hpipm_mode": "BALANCE",
         "initialize_t_slacks": 0,
         "integrator_type": "ERK",
-        "levenberg_marquardt": 0.01,
+        "levenberg_marquardt": 0.0,
         "line_search_use_sufficient_descent": 0,
         "model_external_shared_lib_dir": null,
         "model_external_shared_lib_name": null,
@@ -990,7 +990,7 @@
         "nlp_solver_tol_eq": 0.0001,
         "nlp_solver_tol_ineq": 0.0001,
         "nlp_solver_tol_stat": 0.0001,
-        "nlp_solver_type": "SQP_RTI",
+        "nlp_solver_type": "SQP",
         "print_level": 0,
         "qp_solver": "PARTIAL_CONDENSING_HPIPM",
         "qp_solver_cond_N": null,
