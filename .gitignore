@@ -1,6 +1,7 @@
 *.pyc
 .vscode
 circle_wp_gen.py
+*.csv
 .idea
 stuff.py
 results

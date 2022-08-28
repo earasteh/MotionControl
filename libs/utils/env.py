@@ -6,6 +6,7 @@ import numpy as np
 from libs.utils.cubic_spline_interpolator import generate_cubic_spline
 import pandas as pd
 import matplotlib.pyplot as plt
+import csv
 
 
 class Path:
@@ -150,6 +151,7 @@ world.road_bound_add(x4, y4, 'left')
 # find the middle of the road
 world.road_middle()
 
+
 def main():
     plt.figure()
     # plt.plot(path1.px, path1.py)
@@ -160,7 +162,16 @@ def main():
     plt.axis('equal')
     plt.show()
 
-    print(type(np.array(world.obstacle_xy)))
+    header = ['x', 'y', 'yaw']
+    data = [{}]
+
+    for x, y, yaw in zip(world.xm, world.ym, world.path.pyaw):
+        data.append({'x': x, 'y': y, 'yaw': yaw})
+
+    with open('traj.csv', 'w') as f:
+        writer = csv.DictWriter(f, fieldnames=header)
+        writer.writeheader()
+        writer.writerows(data)
 
 
 if __name__ == "__main__":
